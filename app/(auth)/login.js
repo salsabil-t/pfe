@@ -1,12 +1,11 @@
-import React, { useState } from "react";
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
-  View,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  Image,
+  View
 } from "react-native";
 
 export default function LoginScreen() {
