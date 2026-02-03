@@ -1,12 +1,14 @@
-import React, { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from 'expo-router';
+import { useState } from "react";
 import {
-  View,
+  Image,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
+  View,
 } from "react-native";
-import { useRouter } from 'expo-router';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -14,9 +16,18 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
+  
 
   return (
+     
     <View style={styles.container}>
+       {/* Images en haut */}
+            <View style={styles.topSection}>
+          <Image
+            source={require("../../assets/images/adn.png")}
+            style={styles.adn}
+          />
+         </View>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.hello}>Create Account</Text>
@@ -29,6 +40,7 @@ export default function SignUpScreen() {
 
         {/* Username */}
         <View style={styles.inputContainer}>
+           <Ionicons name="person-outline" size={20} color="#0b4f5c" /> 
           <TextInput
             placeholder="Username"
             value={username}
@@ -39,6 +51,7 @@ export default function SignUpScreen() {
 
         {/* Password */}
         <View style={styles.inputContainer}>
+           <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Password"
             secureTextEntry
@@ -50,6 +63,7 @@ export default function SignUpScreen() {
 
         {/* Confirm Password */}
         <View style={styles.inputContainer}>
+          <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Confirm Password"
             secureTextEntry
@@ -61,6 +75,7 @@ export default function SignUpScreen() {
 
         {/* Phone */}
         <View style={styles.inputContainer}>
+          <Ionicons name="call-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Phone"
             value={phone}
@@ -99,6 +114,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 30,
+    marginTop:60
   },
   hello: {
     fontSize: 32,
@@ -130,9 +146,15 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     height: 50,
     justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center"
   },
   input: {
+    flex: 1,
     fontSize: 16,
+    marginLeft: 10,
+    fontSize: 16,
+    marginLeft: 10
   },
   button: {
     backgroundColor: "#0b4f5c",
@@ -155,4 +177,13 @@ const styles = StyleSheet.create({
     color: "#0b4f5c",
     fontWeight: "bold",
   },
+  adn: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 130,
+    height: 130,
+    resizeMode: "contain",
+  },
+
 });

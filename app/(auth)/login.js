@@ -1,6 +1,8 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
+  Image,
   StyleSheet,
   Text,
   TextInput,
@@ -12,9 +14,24 @@ export default function LoginScreen() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  
 
   return (
     <View style={styles.container}>
+         {/* Images en haut */}
+      <View style={styles.topSection}>
+    <Image
+      source={require("../../assets/images/adn.png")}
+      style={styles.adn}
+    />
+    <Image
+      source={require("../../assets/images/Pill.png")}
+      style={styles.Pill}
+    />
+  </View>
+
+   
+    
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.hello}>Hello!</Text>
@@ -29,6 +46,7 @@ export default function LoginScreen() {
 
         {/* Username */}
         <View style={styles.inputContainer}>
+          <Ionicons name="person-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Username"
             value={username}
@@ -36,9 +54,11 @@ export default function LoginScreen() {
             style={styles.input}
           />
         </View>
+        
 
         {/* Password */}
         <View style={styles.inputContainer}>
+          <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Password"
             secureTextEntry
@@ -82,14 +102,15 @@ const styles = StyleSheet.create({
   },
 
   hello: {
-    fontSize: 32,
+    fontSize: 62,
     color: "white",
     fontWeight: "bold",
+
   },
 
   welcome: {
     color: "white",
-    fontSize: 16,
+    fontSize: 18,
     marginTop: 5,
   },
 
@@ -117,10 +138,16 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     height: 50,
     justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center"
   },
 
   input: {
+    flex: 1,
     fontSize: 16,
+    marginLeft: 10,
+    fontSize: 16,
+    marginLeft: 10
   },
 
   forgot: {
@@ -152,5 +179,30 @@ const styles = StyleSheet.create({
   signupLink: {
     color: "#0b4f5c",
     fontWeight: "bold",
+  },
+  /* ===== Images top ===== */
+
+  topSection: {
+    height: 140,
+    position: "relative",
+  },
+
+  adn: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 130,
+    height: 130,
+    resizeMode: "contain",
+  },
+
+  Pill: {
+    position: "absolute",
+    right: 1,
+    bottom: -20,
+    width: 300,
+    height:360,
+    resizeMode: "contain",
+     transform: [{ translateY: 230 }], 
   },
 });
