@@ -9,13 +9,47 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { supabase } from '../lib/supabase';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const handleSignup = async () => {
+  if (!email || !password) {
+    alert("Please enter email and password");
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: email,
+      password: password,
+    });
+
+    if (error) {
+      alert(error.message);
+      return;
+    } 
+      // Ajouter une ligne dans la table profiles
+    const { data: profileData, error: profileError } = await supabase
+      .from("profiles")
+      .insert([{ email: email }]);
+
+    if (profileError) {
+      alert(profileError.message);
+      return;
+    }
+    else {
+      alert("Account created! You can now log in.");
+      router.push("/auth/login"); // redirige vers login après signup
+    }
+  } catch (err) {
+    alert("Something went wrong: " + err.message);
+  }
+};
   
 
   return (
@@ -38,13 +72,14 @@ export default function SignUpScreen() {
       <View style={styles.card}>
         <Text style={styles.title}>Sign Up</Text>
 
-        {/* Username */}
+        {/* Email */}
         <View style={styles.inputContainer}>
-           <Ionicons name="person-outline" size={20} color="#0b4f5c" /> 
+           <Ionicons name="mail-outline" size={20} color="#0b4f5c" /> 
           <TextInput
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
+            placeholder="Email"
+            placeholderTextColor={"#555"}
+            value={email}
+            onChangeText={setEmail}
             style={styles.input}
           />
         </View>
@@ -54,6 +89,7 @@ export default function SignUpScreen() {
            <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Password"
+            placeholderTextColor={"#555"}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -66,6 +102,7 @@ export default function SignUpScreen() {
           <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Confirm Password"
+            placeholderTextColor={"#555"}
             secureTextEntry
             value={confirmPassword}
             onChangeText={setConfirmPassword}
@@ -78,6 +115,7 @@ export default function SignUpScreen() {
           <Ionicons name="call-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Phone"
+            placeholderTextColor={"#555"}
             value={phone}
             onChangeText={setPhone}
             style={styles.input}
@@ -88,7 +126,7 @@ export default function SignUpScreen() {
         {/* Sign Up Button */}
         <TouchableOpacity 
           style={styles.button}
-          onPress={() => router.push('/login')}
+          onPress={handleSignup}
         >
           <Text style={styles.buttonText}>Sign Up</Text>
         </TouchableOpacity>
@@ -180,9 +218,9 @@ const styles = StyleSheet.create({
   adn: {
     position: "absolute",
     top: 0,
-    left: 0,
-    width: 130,
-    height: 130,
+    left: 3,
+    width: 100,
+    height: 100,
     resizeMode: "contain",
   },
 

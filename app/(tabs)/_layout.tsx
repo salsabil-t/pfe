@@ -1,5 +1,4 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -10,6 +9,8 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   const theme=Colors[colorScheme ?? Colors.light]
   return (
+    
+
     <Tabs
       screenOptions={{
         tabBarActiveTintColor:theme.iconColorFocused,

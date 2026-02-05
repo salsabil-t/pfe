@@ -1,3 +1,4 @@
+
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -9,12 +10,30 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import { supabase } from '../lib/supabase';
+
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  
+  const handleLogin = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
+        alert(error.message);
+      } else {
+        router.push('/(tabs)');
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+ 
 
   return (
     <View style={styles.container}>
@@ -44,13 +63,14 @@ export default function LoginScreen() {
       <View style={styles.card}>
         <Text style={styles.title}>Login</Text>
 
-        {/* Username */}
+        {/* Email */}
         <View style={styles.inputContainer}>
-          <Ionicons name="person-outline" size={20} color="#0b4f5c" />
+          <Ionicons name="mail-outline" size={20} color="#0b4f5c" />
           <TextInput
-            placeholder="Username"
-            value={username}
-            onChangeText={setUsername}
+            placeholder="Email"
+            placeholderTextColor={"#555"}
+            value={email}
+            onChangeText={setEmail}
             style={styles.input}
           />
         </View>
@@ -61,6 +81,7 @@ export default function LoginScreen() {
           <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Password"
+             placeholderTextColor={"#555"}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -73,7 +94,7 @@ export default function LoginScreen() {
         {/* Login Button */}
          <TouchableOpacity 
          style={styles.button}
-         onPress={() => router.push('/add')}
+         onPress={handleLogin}
         >
         <Text style={styles.buttonText}>Login</Text>
          </TouchableOpacity>
@@ -102,7 +123,7 @@ const styles = StyleSheet.create({
   },
 
   hello: {
-    fontSize: 62,
+    fontSize: 52,
     color: "white",
     fontWeight: "bold",
 
@@ -190,9 +211,9 @@ const styles = StyleSheet.create({
   adn: {
     position: "absolute",
     top: 0,
-    left: 0,
-    width: 130,
-    height: 130,
+    left: 3,
+    width: 100,
+    height: 100,
     resizeMode: "contain",
   },
 
@@ -200,9 +221,9 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 1,
     bottom: -20,
-    width: 300,
-    height:360,
+    width: 250,
+    height:250,
     resizeMode: "contain",
-     transform: [{ translateY: 230 }], 
+     transform: [{ translateY: 180}], 
   },
 });
