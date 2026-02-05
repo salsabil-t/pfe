@@ -147,7 +147,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 10,
     fontSize: 16,
-    marginLeft: 10
+    marginLeft: 10,
+    
   },
 
   forgot: {
