@@ -27,7 +27,7 @@ export default function LoginScreen() {
       if (error) {
         alert(error.message);
       } else {
-        router.push('/(tabs)');
+        router.push('/(tabs)/add');
       }
     } catch (err) {
       alert(err.message);
