@@ -27,7 +27,7 @@ export default function LoginScreen() {
       if (error) {
         alert(error.message);
       } else {
-        router.push('/(tabs)');
+        router.push('notification');
       }
     } catch (err) {
       alert(err.message);
@@ -224,6 +224,9 @@ const styles = StyleSheet.create({
     width: 250,
     height:250,
     resizeMode: "contain",
-     transform: [{ translateY: 180}], 
+    transform: [{ translateY: 180}], 
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
   },
 });
