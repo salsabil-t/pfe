@@ -200,9 +200,15 @@ export default function AddMedicationScreen() {
           <View style={styles.cardnodays}>
             <Text style={styles.cardTitle}>Number of days</Text>
             <View style={styles.counterCenter}>
-              <TouchableOpacity style={styles.counterBtn} onPress={() => setDays(Math.max(1, days - 1))}><Text style={styles.counterTextnodays}>−</Text></TouchableOpacity>
-              <View style={styles.nodaysbox}><Text style={styles.counterValuenodays}>{days}</Text></View>
-              <TouchableOpacity style={styles.counterBtn} onPress={() => setDays(days + 1)}><Text style={styles.counterTextnodays}>+</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.counterBtn} onPress={() => setDays(Math.max(1, days - 1))}>
+                <Text style={styles.counterTextnodays}>−</Text>
+              </TouchableOpacity>
+              <View style={styles.nodaysbox}>
+                <Text style={styles.counterValuenodays}>{days}</Text>
+              </View>
+              <TouchableOpacity style={styles.counterBtn} onPress={() => setDays(days + 1)}>
+                <Text style={styles.counterTextnodays}>+</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -228,7 +234,7 @@ export default function AddMedicationScreen() {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Select Time</Text>
-              <DateTimePicker value={tempDate} mode="time" is24Hour={true} display="spinner" onChange={onTimeChange} textColor="black" themeVariant="light" />
+              <DateTimePicker value={tempDate} mode="time" is24Hour={true} display="spinner" onChange={onTimeChange} textColor="black" themeVariant="light" fontWeight="600"/>
               <TouchableOpacity style={styles.fullWidthDoneBtn} onPress={() => setShowTimePicker(false)}>
                 <Text style={styles.modalDoneText}>Done</Text>
               </TouchableOpacity>
@@ -237,7 +243,7 @@ export default function AddMedicationScreen() {
         </Modal>
       )}
 
-      {/* --- DESIGN FIXED: CALENDAR MODAL WITH MULTI-CIRCLE --- */}
+      {/* --- CALENDAR MODAL WITH MULTI-CIRCLE --- */}
       {showCalendar && (
         <Modal transparent animationType="slide">
           <View style={styles.modalOverlay}>
@@ -248,8 +254,8 @@ export default function AddMedicationScreen() {
                 onDayPress={handleDayPress}
                 markedDates={markedDates}
                 theme={{
-                  todayTextColor: '#0b6f7c',
-                  arrowColor: '#0b6f7c',
+                  todayTextColor: '#4b4d4d',
+                  arrowColor: '#555',
                   selectedDayBackgroundColor: '#0a5f6a',
                   selectedDayTextColor: '#ffffff',
                   textDayFontWeight: '600',
@@ -258,7 +264,7 @@ export default function AddMedicationScreen() {
               />
 
               <View style={styles.modalButtonsRow}>
-                <TouchableOpacity style={styles.modalUnifiedBtn} onPress={() => setShowCalendar(false)}>
+                <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setShowCalendar(false)}>
                   <Text style={styles.modalDoneText}>Done</Text>
                 </TouchableOpacity>
               </View>
@@ -304,11 +310,11 @@ const styles = StyleSheet.create({
   scheduleBtnTextActive: { color: "#fff" },
   addBtn: { backgroundColor: "#0a5f6a", borderRadius: 30, paddingVertical: 14, alignItems: "center", marginTop: 10 },
   addText: { color: "#fff", fontSize: 19, fontWeight: "700" },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent:'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#0b6f7c', textAlign: 'center', marginBottom: 15 },
   modalButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 15 },
-  modalUnifiedBtn: { flex: 1, backgroundColor: '#0a5f6a', padding: 15, borderRadius: 10, alignItems: 'center' },
+  modalDoneBtn: { flex: 1, backgroundColor: '#0a5f6a', padding: 15, borderRadius: 10, alignItems: 'center' },
   fullWidthDoneBtn: { backgroundColor: '#0a5f6a', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 15 },
-  modalDoneText: { color: '#fff', fontSize: 16, fontWeight: '600' }
+  modalDoneText: { color: '#fff', fontSize: 17, fontWeight: '600' }
 });
