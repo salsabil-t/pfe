@@ -1,5 +1,5 @@
-import { Redirect } from 'expo-router';
+import HomeScreen from './HomeScreen';
 
 export default function Index() {
-  return <Redirect href="/login" />;
+  return <HomeScreen />;
 }
