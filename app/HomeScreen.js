@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     height: 30,
   },
 });
-export default HomeScreen;
+
 
     
   
