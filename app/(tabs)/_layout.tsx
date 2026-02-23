@@ -12,12 +12,13 @@ export default function TabLayout() {
     
 
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor:theme.iconColorFocused,
+     screenOptions={{
+        tabBarActiveTintColor:"#0b4f5c",
         headerShown: false,
         tabBarButton: HapticTab,
-        tabBarStyle: {height:200, paddingTop:10, backgroundColor:theme.backgroundColor},
-        tabBarInactiveTintColor: theme.iconColor
+        tabBarStyle: { display: 'none' }, 
+        tabBarInactiveTintColor: "#8e8e8e"
+      
       }}>
       <Tabs.Screen
         name="home"
@@ -36,8 +37,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="notification"
         options={{
-          title: 'Notification',
-          tabBarIcon: ({ color }) => <IconSymbol size={30} name="bell.fill" color={color} padding={5} />,
+          title: 'notification',
+          tabBarIcon: ({ color }) => <IconSymbol size={30} name="bell.fill" color={color}  />,
         }}
       />
       <Tabs.Screen
