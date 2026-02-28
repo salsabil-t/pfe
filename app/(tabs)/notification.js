@@ -16,26 +16,26 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../lib/supabase';
 
 function NotificationScreen({ navigation }) {
-  const [notification, setNotification] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('today');
   const router = useRouter();
 
   useEffect(() => {
-    fetchNotification();
+    fetchNotifications();
 
     const subscription = supabase
-      .channel('notification-channel')
+      .channel('notifications-channel')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'notification',
+          table: 'notifications',
         },
         (payload) => {
           console.log('Changement détecté:', payload);
-          fetchNotification();
+          fetchNotifications();
         }
       )
       .subscribe();
@@ -45,41 +45,36 @@ function NotificationScreen({ navigation }) {
     };
   }, []);
 
- const fetchNotification = async () => {
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const fetchNotifications = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    const { data, error } = await supabase
-      .from('notification')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    setNotification(data || []);
-  } catch (error) {
-    console.error('Erreur:', error);
-  }
-};
+      if (error) throw error;
+      setNotifications(data || []);
+    } catch (error) {
+      console.error('Erreur:', error);
+      Alert.alert('Erreur', 'Impossible de charger les notifications');
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchNotification();
+    await fetchNotifications();
     setRefreshing(false);
   };
 
   const markAsRead = async (id) => {
     try {
       const { error } = await supabase
-        .from('notification')
+        .from('notifications')
         .update({ is_read: true })
         .eq('id', id);
 
       if (error) throw error;
-      await fetchNotification();
+      await fetchNotifications();
     } catch (error) {
       console.error('Erreur:', error);
     }
@@ -97,12 +92,12 @@ function NotificationScreen({ navigation }) {
           onPress: async () => {
             try {
               const { error } = await supabase
-                .from('notification')
+                .from('notifications')
                 .delete()
                 .eq('id', id);
 
               if (error) throw error;
-              await fetchNotification();
+              await fetchNotifications();
             } catch (error) {
               console.error('Erreur:', error);
             }
@@ -135,8 +130,7 @@ function NotificationScreen({ navigation }) {
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
     const ampm = date.getHours() >= 12 ? 'PM' : 'AM';
-    return `${hours}:${minutes} ${ampm}`;
-    };
+    return $; { }  };
 
   const isToday = (timestamp) => {
     const today = new Date();
@@ -148,10 +142,9 @@ function NotificationScreen({ navigation }) {
     );
   };
 
-  const todayNotification = notification.filter((notif) => isToday(notif.created_at));
-  const oldNotification = notification.filter((notif) => !isToday(notif.created_at));
-
-  const displayedNotification = activeTab === 'today' ? todayNotification : oldNotification;
+  const todayNotifications = notifications.filter((notif) => isToday(notif.created_at));
+  const oldNotifications = notifications.filter((notif) => !isToday(notif.created_at));
+  const displayedNotifications = activeTab === 'today' ? todayNotifications : oldNotifications;
   const renderNotification = ({ item }) => (
     <TouchableOpacity
       style={[styles.notificationCard, !item.is_read && styles.unreadCard]}
@@ -212,9 +205,9 @@ function NotificationScreen({ navigation }) {
           <Text style={[styles.tabText, activeTab === 'today' && styles.activeTabText]}>
             Today
           </Text>
-          {todayNotification.length > 0 && (
+          {todayNotifications.length > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{todayNotification.length}</Text>
+              <Text style={styles.badgeText}>{todayNotifications.length}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -226,9 +219,9 @@ function NotificationScreen({ navigation }) {
           <Text style={[styles.tabText, activeTab === 'old' && styles.activeTabText]}>
             Old
           </Text>
-          {oldNotification.length > 0 && (
+          {oldNotifications.length > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{oldNotification.length}</Text>
+              <Text style={styles.badgeText}>{oldNotifications.length}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -236,7 +229,7 @@ function NotificationScreen({ navigation }) {
 
       {/* Liste des notifications */}
       <FlatList
-        data={displayedNotification}
+        data={displayedNotifications}
         renderItem={renderNotification}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
@@ -255,26 +248,26 @@ function NotificationScreen({ navigation }) {
       <View style={styles.bottomNav}>
         <TouchableOpacity
           style={styles.navButton}
-          onPress={() => router.replace('home')}
+          onPress={() => router.push('home')}
         >
           <Icon name="home-outline" size={30} color="#9CA3AF" />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navButton}
-          onPress={() => router.replace('add')}
+          onPress={() => router.push('add')}
         >
           <Icon name="add-circle-outline" size={30} color="#9CA3AF" />
         </TouchableOpacity>
-
+        
         <TouchableOpacity style={styles.navButton}>
-          onPress={() => router.replace('notification')}
+          onPress={() => router.push('notification')}
           <Icon name="notifications-outline" size={30} color="#0b6f7c" />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navButton}
-          onPress={() => router.replace('history')}
+          onPress={() => router.push('history')}
         >
           <Icon name="time-outline" size={30} color="#9CA3AF" />
         </TouchableOpacity>
