@@ -3,6 +3,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useState } from "react";
 import {
   Alert,
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
@@ -10,8 +11,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
-  Keyboard
+  View
 } from "react-native";
 import { Calendar } from 'react-native-calendars'; // 1. Added this import
 import { supabase } from '../lib/supabase';
