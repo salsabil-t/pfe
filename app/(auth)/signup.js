@@ -33,18 +33,9 @@ export default function SignUpScreen() {
       alert(error.message);
       return;
     } 
-      // Ajouter une ligne dans la table profiles
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .insert([{ email: email }]);
-
-    if (profileError) {
-      alert(profileError.message);
-      return;
-    }
-    else {
+    {
       alert("Account created! You can now log in.");
-      router.push("/auth/login"); // redirige vers login après signup
+      router.push("/(auth)/login"); // redirige vers login après signup
     }
   } catch (err) {
     alert("Something went wrong: " + err.message);
@@ -135,7 +126,7 @@ export default function SignUpScreen() {
           Already have an account?{" "}
           <Text 
             style={styles.loginLink}
-            onPress={() => router.push('/login')}
+            onPress={() => router.push('/(auth)/login')}
           >
             Login
           </Text>
