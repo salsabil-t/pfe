@@ -227,7 +227,7 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#06303A" },
+  container: { flex: 1, backgroundColor: "#0b4f5c" },
   header: { flexDirection: "row", alignItems: "center", padding: 20, marginTop: 10 },
   headerTitle: { color: "white", fontSize: 28, fontWeight: "bold", marginLeft: 15 },
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },

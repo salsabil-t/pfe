@@ -1,313 +1,479 @@
-// app/HomeScreen.js
 import {
   SafeAreaView,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
+  TextInput,
+  Alert,
+  Dimensions
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+
+const formatTimeAmPm = (timeStr) => {
+  let [hours, minutes] = timeStr.split(':');
+  hours = parseInt(hours);
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12; 
+  return `${hours}:${minutes} ${ampm}`;
+};
 
 export default function HomeScreen() {
-  // Données du patient
-  const patientInfo = {
-    name: 'Sam Franco',
-    age: '80 ans',
-    disease: 'Diabète',
-    status: 'Tous médicaments pris',
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [userName, setUserName] = useState("Care Giver");
+  const [patientData, setPatientData] = useState({ name: "Not Set", age: "", disease: "N/A" });
+  const [todaySchedule, setTodaySchedule] = useState([]);
+  const [medicationStock, setMedicationStock] = useState([]);
+  
+  const [showPatientModal, setShowPatientModal] = useState(false);
+  const [editPatientName, setEditPatientName] = useState("");
+  const [editPatientAge, setEditPatientAge] = useState("");
+  const [editPatientDisease, setEditPatientDisease] = useState("");
+
+  const todayDate = new Date();
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const currentMonth = monthNames[todayDate.getMonth()];
+  const currentDay = todayDate.getDate().toString().padStart(2, '0');
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (user.user_metadata?.full_name) {
+        setUserName(user.user_metadata.full_name);
+      } else {
+        setUserName(user.email.split('@')[0]);
+      }
+
+      const { data: patient } = await supabase
+        .from("patient_profile")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (patient) {
+        setPatientData({
+          name: patient.patient_name,
+          age: patient.patient_age ? `${patient.patient_age}` : "",
+          disease: patient.disease || "N/A"
+        });
+      }
+
+      await fetchTodaySchedule(user.id);
+      await fetchMedicationStock(user.id);
+
+    } catch (error) {
+      console.error("Load Error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Planning des médicaments
-  const schedule = [
-    { id: 1, time: '8:00 AM', medication: 'Paracetamol', dosage: '10ml', taken: true },
-    { id: 2, time: '8:40 AM', medication: 'Paracetamol', dosage: '10ml', taken: false },
-  ];
+  const fetchTodaySchedule = async (userId) => {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
 
-  // Stock des médicaments
-  const medicationStock = [
-    { id: 1, name: 'Medecine1', daysRemaining: 7, status: 'warning' },
-    { id: 2, name: 'Medecine2', daysRemaining: 30, status: 'good' },
-  ];
+    const { data: meds } = await supabase.from("add med table").select("*").eq("user_id", userId);
+    if (!meds) return;
+
+    const schedule = [];
+
+    for (const med of meds) {
+      let activeToday = false;
+      if (med.schedule_type === "consecutive") {
+        const start = new Date(med.start_date + "T00:00:00");
+        const curr = new Date(todayStr + "T00:00:00");
+        const diff = Math.floor((curr - start) / (1000 * 60 * 60 * 24));
+        if (diff >= 0 && diff < parseInt(med.num_of_days)) activeToday = true;
+      } else {
+        const { data: spec } = await supabase.from("medication_dates")
+          .select("*").eq("medication_id", med.id).eq("scheduled_date", todayStr);
+        if (spec && spec.length > 0) activeToday = true;
+      }
+
+      if (activeToday) {
+        const { data: takes } = await supabase.from("medication takes").select("*").eq("medication_id", med.id);
+        const { data: logs } = await supabase.from("medication_log").select("*").eq("medication_id", med.id).eq("scheduled_date", todayStr);
+
+        takes?.forEach(t => {
+          const isTaken = logs?.some(l => l.take_id === t.id && l.status === 'taken');
+          const isFuture = isTimeInFuture(t.time);
+          
+          schedule.push({
+            id: t.id,
+            name: med.name,
+            time: t.time,
+            dose: t.dose,
+            taken: isTaken,
+            pending: isFuture
+          });
+        });
+      }
+    }
+    setTodaySchedule(schedule.sort((a,b) => a.time.localeCompare(b.time)));
+  };
+
+  const fetchMedicationStock = async (userId) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { data: meds } = await supabase.from("add med table").select("*").eq("user_id", userId);
+    
+    let stockList = [];
+    for (const med of meds) {
+        let remaining = 0;
+        if (med.schedule_type === "consecutive") {
+            const end = new Date(med.start_date);
+            end.setDate(end.getDate() + parseInt(med.num_of_days));
+            const diff = Math.ceil((end - new Date()) / (1000 * 60 * 60 * 24));
+            remaining = diff > 0 ? diff : 0;
+        } else {
+            const { count } = await supabase.from("medication_dates")
+              .select('*', { count: 'exact', head: true })
+              .eq("medication_id", med.id).gte("scheduled_date", todayStr);
+            remaining = count || 0;
+        }
+        stockList.push({ id: med.id, name: med.name, daysRemaining: remaining });
+    }
+
+    // Sort: > 0 days at the top, 0 days at the bottom
+    stockList.sort((a, b) => {
+      if (a.daysRemaining > 0 && b.daysRemaining === 0) return -1;
+      if (a.daysRemaining === 0 && b.daysRemaining > 0) return 1;
+      return b.daysRemaining - a.daysRemaining; 
+    });
+
+    setMedicationStock(stockList);
+  };
+
+  const isTimeInFuture = (timeStr) => {
+    const [h, m] = timeStr.split(':');
+    const now = new Date();
+    const medTime = new Date();
+    medTime.setHours(parseInt(h), parseInt(m), 0);
+    return medTime > now;
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  const openPatientModal = () => {
+    setEditPatientName(patientData.name === "Not Set" ? "" : patientData.name);
+    setEditPatientAge(patientData.age);
+    setEditPatientDisease(patientData.disease === "N/A" ? "" : patientData.disease);
+    setShowPatientModal(true);
+  };
+
+  const savePatientProfile = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from("patient_profile").upsert({
+        user_id: user.id,
+        patient_name: editPatientName,
+        patient_age: parseInt(editPatientAge),
+        disease: editPatientDisease,
+        updated_at: new Date()
+    });
+    if (error) Alert.alert("Error", error.message);
+    else { setShowPatientModal(false); loadData(); }
+  };
+
+  // NEW: Function to delete finished medications
+  const deleteMedication = (medId) => {
+    Alert.alert(
+      "Remove Medication",
+      "Are you sure you want to delete this finished medication from the list?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: async () => {
+            const { error } = await supabase.from("add med table").delete().eq("id", medId);
+            if (error) {
+              Alert.alert("Error", error.message);
+            } else {
+              loadData(); // Refresh list after deletion
+            }
+          } 
+        }
+      ]
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        {/* En-tête */}
+    <SafeAreaView style={styles.container}>
+      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#fff" />}>
+        
+        {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.welcomeText}>Bonjour, {patientInfo.name} 👋</Text>
-          <Text style={styles.subtitle}>Bienvenue sur votre dashboard de gestion des médicaments</Text>
+          <View>
+            <Text style={styles.helloText}>Hello 👋</Text>
+            <Text style={styles.userTitle}>{userName}</Text>
+          </View>
+          <TouchableOpacity style={styles.profileIconCircle}>
+            <Ionicons name="person" size={28} color="#0b4f5c" />
+          </TouchableOpacity>
         </View>
 
-        {/* Section Patient */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📋 Informations Patient</Text>
-          <View style={styles.card}>
-            <InfoRow label="Nom" value={patientInfo.name} />
-            <InfoRow label="Âge" value={patientInfo.age} />
-            <InfoRow label="Maladie" value={patientInfo.disease} />
+        {/* Patient Card - Updated Design */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Patient</Text>
+          <TouchableOpacity style={styles.patientCard} onPress={openPatientModal}>
             <View style={styles.infoRow}>
-              <Text style={styles.label}>Statut</Text>
-              <View style={styles.statusBadge}>
-                <Text style={styles.statusText}>✅ {patientInfo.status}</Text>
-              </View>
+              <Text style={styles.label}>Name</Text>
+              <Text style={styles.value}>{patientData.name}</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.label}>Age</Text>
+              <Text style={styles.value}>{patientData.age ? `${patientData.age} years old` : "N/A"}</Text>
+            </View>
+            <View style={[styles.infoRow, {marginBottom: 0}]}>
+              <Text style={styles.label}>Disease</Text>
+              <Text style={styles.value}>{patientData.disease}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Schedule Horizontal Scroll */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Schedule</Text>
+          {todaySchedule.length === 0 ? (
+            <View style={styles.emptyCard}><Text style={styles.emptyText}>No medications for today</Text></View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+              {todaySchedule.map((item) => (
+                <View key={item.id} style={styles.scheduleCard}>
+                  <View style={styles.cardTopRow}>
+                    <Text style={styles.cardTime}>{formatTimeAmPm(item.time)}</Text>
+                    <View style={styles.cardDateBox}>
+                      <Text style={styles.cardMonth}>{currentMonth}</Text>
+                      <Text style={styles.cardDay}>{currentDay}</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.cardMiddleRow}>
+                    <Text style={styles.cardMedName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.cardDose}>{item.dose}mm</Text>
+                  </View>
+
+                  <View style={styles.cardBottomRow}>
+                    {item.taken ? <Ionicons name="checkmark-circle" size={34} color="#0b6f7c" /> :
+                     item.pending ? <Ionicons name="time" size={34} color="#0b6f7c" /> :
+                     <Ionicons name="alert-circle" size={34} color="#0b6f7c" />}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Stock Vertical List - Updated Sorting and Colors */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Medication Stock</Text>
+          
+          <View style={styles.stockMainCard}>
+            <ScrollView 
+              style={styles.stockScrollArea}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              {medicationStock.map((item, index) => (
+                <View key={item.id} style={[styles.stockItemRow, index === medicationStock.length - 1 && {marginBottom: 0}]}>
+                  <View style={styles.stockTextContainer}>
+                    <Text style={styles.stockItemName}>{item.name} :</Text>
+                    <Text 
+                      style={[
+                        styles.stockItemDays, 
+                        // Green if days > 0, dark grey if 0
+                        { color: item.daysRemaining > 0 ? '#27ae60' : '#555' } 
+                      ]}
+                    >
+                      {' '}{item.daysRemaining} days remaining
+                    </Text>
+                  </View>
+                  
+                  {/* Delete Button - Only shows if daysRemaining === 0 */}
+                  {item.daysRemaining === 0 && (
+                    <TouchableOpacity onPress={() => deleteMedication(item.id)} style={styles.deleteBtn}>
+                      <Ionicons name="trash" size={20} color="#e74c3c" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+              {medicationStock.length === 0 && (
+                 <Text style={{color: '#666', textAlign: 'center', marginTop: 10}}>No medications in stock.</Text>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Patient Modal */}
+      <Modal visible={showPatientModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Patient</Text>
+            <TextInput style={styles.input} placeholder="Patient Name" value={editPatientName} onChangeText={setEditPatientName} />
+            <TextInput style={styles.input} placeholder="Age" keyboardType="numeric" value={editPatientAge} onChangeText={setEditPatientAge} />
+            <TextInput style={styles.input} placeholder="Disease" value={editPatientDisease} onChangeText={setEditPatientDisease} />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowPatientModal(false)}><Text>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.saveBtn} onPress={savePatientProfile}><Text style={{color:'#fff'}}>Save</Text></TouchableOpacity>
             </View>
           </View>
         </View>
-
-        {/* Section Programme du jour */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⏰ Programme du jour</Text>
-          <View style={styles.card}>
-            {schedule.map((item) => (
-              <ScheduleItem key={item.id} item={item} />
-            ))}
-          </View>
-        </View>
-
-        {/* Boutons d'action */}
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={[styles.button, styles.primaryButton]}>
-            <Text style={styles.buttonText}>➕ Ajouter un médicament</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.button, styles.secondaryButton]}>
-            <Text style={styles.buttonText}>📋 Voir l'historique</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Section Stock des médicaments */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📦 Stock des médicaments</Text>
-          <View style={styles.card}>
-            {medicationStock.map((item) => (
-              <StockItem key={item.id} item={item} />
-            ))}
-          </View>
-        </View>
-
-        {/* Espace en bas */}
-        <View style={styles.bottomSpace} />
-      </ScrollView>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-// Composant pour une ligne d'information
-function InfoRow({ label, value }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
-    </View>
-  );
-}
-
-// Composant pour un élément du planning
-function ScheduleItem({ item }) {
-  return (
-    <View style={styles.scheduleItem}>
-      <Text style={styles.timeText}>{item.time}</Text>
-      <View style={styles.medicationInfo}>
-        <Text style={styles.medicationName}>{item.medication}</Text>
-        <Text style={styles.dosageText}>{item.dosage}</Text>
-      </View>
-      <TouchableOpacity
-        style={[
-          styles.statusButton,
-          item.taken ? styles.takenButton : styles.missedButton,
-        ]}
-      >
-        <Text style={styles.statusButtonText}>
-          {item.taken ? 'Pris' : 'Manqué'}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-// Composant pour un élément du stock
-function StockItem({ item }) {
-  const getStatusColor = () => {
-    if (item.status === 'warning') return '#e74c3c';
-    if (item.status === 'good') return '#27ae60';
-    return '#7f8c8d';
-  };
-
-  return (
-    <View style={styles.stockItem}>
-      <Text style={styles.stockName}>{item.name}</Text>
-      <Text style={[styles.stockDays, { color: getStatusColor() }]}>
-        {item.daysRemaining} jours restants
-      </Text>
-    </View>
-  );
-}
-
-// Styles
 const styles = StyleSheet.create({
-  safeArea: {
+  container: { flex: 1, backgroundColor: '#0b4f5c' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, marginTop: 20 },
+  helloText: { color: '#fff', fontSize: 16 },
+  userTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
+  profileIconCircle: { backgroundColor: '#fff', padding: 8, borderRadius: 50 },
+  sectionContainer: { paddingLeft: 20, marginBottom: 25, paddingRight: 20 },
+  sectionTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 12 },
+  
+  /* --- UPDATED PATIENT CARD STYLES --- */
+  patientCard: { 
+    backgroundColor: '#e6e6e6', 
+    borderRadius: 40, 
+    padding: 25,
+    paddingHorizontal: 30
+  },
+  infoRow: { 
+    flexDirection: 'row', 
+    marginBottom: 12,
+    alignItems: 'center'
+  },
+  label: { 
+    width: 90, 
+    fontSize: 18,
+    fontWeight: 'bold', 
+    color: '#0b6f7c' 
+  },
+  value: { 
+    fontSize: 18,
+    color: '#555', 
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    fontWeight: '600'
   },
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
+
+  scheduleCard: { 
+    backgroundColor: '#e6e6e6', 
+    borderRadius: 40, 
+    padding: 18, 
+    marginRight: 15, 
+    width: 160, 
+    height: 160,
+    justifyContent: 'space-between' 
   },
-  header: {
-    marginBottom: 30,
-  },
-  welcomeText: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#7f8c8d',
-  },
-  section: {
-    marginBottom: 25,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#2c3e50',
-    marginBottom: 15,
-    paddingLeft: 5,
-  },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  infoRow: {
+  cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f2f6',
+    alignItems: 'flex-start'
   },
-  label: {
+  cardTime: {
     fontSize: 16,
-    color: '#7f8c8d',
+    fontWeight: '800',
+    color: '#0b6f7c',
+    marginTop: 4
   },
-  value: {
+  cardDateBox: {
+    alignItems: 'center'
+  },
+  cardMonth: {
+    fontSize: 11,
+    color: '#0b6f7c',
+    fontWeight: '700'
+  },
+  cardDay: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#2c3e50',
+    color: '#0b6f7c',
+    fontWeight: '800',
+    marginTop: -2
   },
-  statusBadge: {
-    backgroundColor: '#e8f6ef',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-  },
-  statusText: {
-    fontSize: 14,
-    color: '#27ae60',
-    fontWeight: '500',
-  },
-  scheduleItem: {
+  cardMiddleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f2f6',
-  },
-  timeText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2c3e50',
-    width: 80,
-  },
-  medicationInfo: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  medicationName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#2c3e50',
-    marginBottom: 2,
-  },
-  dosageText: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  statusButton: {
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  takenButton: {
-    backgroundColor: '#27ae60',
-  },
-  missedButton: {
-    backgroundColor: '#e74c3c',
-  },
-  statusButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 25,
-    gap: 15,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 15,
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginTop: 5
   },
-  primaryButton: {
-    backgroundColor: '#3498db',
+  cardMedName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#555',
   },
-  secondaryButton: {
-    backgroundColor: '#9b59b6',
+  cardDose: {
+    fontSize: 11,
+    color: '#888',
+    marginLeft: 3,
+    fontWeight: '600'
   },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  stockItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  cardBottomRow: {
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f2f6',
+    marginBottom: 5
   },
-  stockName: {
+
+  /* --- STOCK CARD STYLES --- */
+  stockMainCard: {
+    backgroundColor: '#e6e6e6',
+    borderRadius: 40, 
+    paddingVertical: 25,
+    paddingHorizontal: 25,
+    maxHeight: 180, 
+  },
+  stockScrollArea: {
+    flexGrow: 0,
+  },
+  stockItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16, 
+  },
+  stockTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  stockItemName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#0b6f7c',
+  },
+  stockItemDays: {
     fontSize: 16,
-    color: '#2c3e50',
-    fontWeight: '500',
+    fontWeight: 'bold',
   },
-  stockDays: {
-    fontSize: 16,
-    fontWeight: '600',
+  deleteBtn: {
+    padding: 5,
+    marginLeft: 10,
   },
-  bottomSpace: {
-    height: 30,
-  },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  modalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 25, width: '85%' },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#0b6f7c', textAlign: 'center', marginBottom: 15 },
+  input: { backgroundColor: '#f0f0f0', borderRadius: 10, padding: 12, marginBottom: 10 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
+  saveBtn: { backgroundColor: '#0a5f6a', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
+  cancelBtn: { backgroundColor: '#eee', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
+  emptyCard: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 20, marginRight: 20, borderRadius: 15 },
+  emptyText: { color: '#fff', textAlign: 'center' }
 });
