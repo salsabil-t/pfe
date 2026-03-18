@@ -20,10 +20,95 @@ function NotificationScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('today');
   const router = useRouter();
+  const checkMissedMedications = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const now = new Date();
+    const currentDate = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().slice(0, 8);
+
+    // Récupère tous les médicaments programmés aujourd'hui
+    const { data: allTakes } = await supabase
+      .from('medication takes')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (!allTakes || allTakes.length === 0) return;
+
+    // Pour chaque médicament programmé
+    for (const take of allTakes) {
+      const scheduledTime = take.time; // "09:00:00"
+      
+      // Calcule la différence en minutes
+      const [schedHour, schedMin] = scheduledTime.split(':').map(Number);
+      const [nowHour, nowMin] = currentTime.split(':').map(Number);
+      
+      const scheduledMinutes = schedHour * 60 + schedMin;
+      const nowMinutes = nowHour * 60 + nowMin;
+      
+      const differenceMinutes = nowMinutes - scheduledMinutes;
+      
+      // Si dépassé de plus de 15 minutes
+      if (differenceMinutes > 2) {
+        // Vérifie si déjà pris dans medication_logs
+        const { data: logs } = await supabase
+          .from('medication_logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('medication_id', take.medication_id)
+          .eq('scheduled_time', scheduledTime)
+          .gte('taken_at', `${currentDate}T00:00:00`)
+          .lte('taken_at', `${currentDate}T23:59:59`);
+
+        // Si pas pris → vérifie si notification déjà créée
+        if (!logs || logs.length === 0) {
+          const { data: existingNotif } = await supabase
+            .from('notification')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('medication_id', take.medication_id)
+            .eq('scheduled_time', scheduledTime)
+            .gte('created_at',` ${currentDate}T00:00:00`);
+
+          // Si notification pas encore créée
+          if (!existingNotif || existingNotif.length === 0) {
+            // Crée notification "missed"
+            await supabase.from('notification').insert({
+              user_id: user.id,
+              medication_id: take.medication_id,
+              scheduled_time: scheduledTime,
+              type: 'missed',
+              message: `Medication scheduled at ${scheduledTime.slice(0, 5)} was not taken`,
+              show_call_button: true,
+              is_read: false,
+              created_at: now.toISOString(),
+            });
+
+            // Marque aussi dans medication_logs comme "missed"
+            await supabase.from('medication_logs').insert({
+              user_id: user.id,
+              medication_id: take.medication_id,
+              scheduled_time: scheduledTime,
+              status: 'missed',
+              taken_at: null,
+            });
+
+            console.log(`Notification created : medication not taken at ${scheduledTime}`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Erreur checkMissedMedications:", error);
+  }
+};
 
   useEffect(() => {
     fetchNotification();
-
+    checkMissedMedications();
+    const checkInterval = setInterval(checkMissedMedications, 30 * 1000);
     const subscription = supabase
       .channel('notification-channel')
       .on(
@@ -41,6 +126,7 @@ function NotificationScreen({ navigation }) {
       .subscribe();
 
     return () => {
+      clearInterval(checkInterval); // ✅ Nettoie l'intervalle
       subscription.unsubscribe();
     };
   }, []);
@@ -87,12 +173,12 @@ function NotificationScreen({ navigation }) {
 
   const deleteNotification = async (id) => {
     Alert.alert(
-      'Confirmation',
-      'Voulez-vous vraiment supprimer cette notification ?',
+      '🗑️ Delete Notification',
+      'Are you sure you want to delete this notification ?',
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Supprimer',
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -114,7 +200,7 @@ function NotificationScreen({ navigation }) {
 
   const makeCall = (phoneNumber) => {
     if (!phoneNumber) {
-      Alert.alert('Erreur', 'Numéro de téléphone non disponible');
+      Alert.alert('Erreur', '📞 Call Reminder');
       return;
     }
 
@@ -127,7 +213,7 @@ function NotificationScreen({ navigation }) {
           Alert.alert('Erreur', 'Impossible d\'ouvrir le composeur téléphonique');
         }
       })
-      .catch((err) => console.error('Erreur lors de l\'appel:', err));
+      .catch((err) => console.error('Call error:', err));
   };
 
   const formatTime = (timestamp) => {
@@ -250,36 +336,11 @@ function NotificationScreen({ navigation }) {
           <Text style={styles.emptyText}>
             {activeTab === 'today' ? 'No notification today' : 'No old notification'}
           </Text>
-        </View>} />
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => router.replace('home')}
-        >
-          <Icon name="home-outline" size={30} color="#9CA3AF" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => router.replace('add')}
-        >
-          <Icon name="add-circle-outline" size={30} color="#9CA3AF" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.navButton}>
-          onPress={() => router.replace('notification')}
-          <Icon name="notifications-outline" size={30} color="#0b6f7c" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => router.replace('history')}
-        >
-          <Icon name="time-outline" size={30} color="#9CA3AF" />
-        </TouchableOpacity>
-      </View>
+        </View>} 
+        />
+        
     </View>
+    
   );
 }
 
@@ -403,14 +464,15 @@ const styles = StyleSheet.create({
   },
   callButton: {
     backgroundColor: '#06333f',
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 25,
     marginLeft: 8,
+    minWidth: 80,
   },
   callButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '600',
   },
   unreadDot: {
@@ -432,7 +494,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: 'rgba(255, 255, 255, 0.7)',
     marginTop: 16,
     textAlign: 'center',
   },
