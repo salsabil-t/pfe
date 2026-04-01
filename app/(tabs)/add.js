@@ -13,43 +13,27 @@ import {
   View,
   Keyboard
 } from "react-native";
-import { Calendar } from 'react-native-calendars'; // 1. Added this import
+import { Calendar } from 'react-native-calendars';
 import { supabase } from '../lib/supabase';
 
 export default function AddMedicationScreen() {
+  // --- STATE ---
   const [name, setName] = useState("");
   const [scheduleType, setScheduleType] = useState("consecutive");
   const [days, setDays] = useState(12);
-  const [selectedDates, setSelectedDates] = useState([]);
-  
-  // 2. Added markedDates to keep the circles visible
-  const [markedDates, setMarkedDates] = useState({});
-  
   const [takes, setTakes] = useState([{ time: "09:00", dose: 2 }]);
+  
+  // Calendar States
+  const [selectedDates, setSelectedDates] = useState([]);
+  const [markedDates, setMarkedDates] = useState({});
   const [showCalendar, setShowCalendar] = useState(false);
+  
+  // Time Picker States
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [currentTakeIndex, setCurrentTakeIndex] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
 
-  // 3. The logic to toggle circles on/off
-  const handleDayPress = (day) => {
-    const dateString = day.dateString;
-    let newMarkedDates = { ...markedDates };
-
-    if (newMarkedDates[dateString]) {
-      // If already circled, remove the circle
-      delete newMarkedDates[dateString];
-      setSelectedDates(selectedDates.filter(d => d !== dateString));
-    } else {
-      // If not circled, add the circle
-      newMarkedDates[dateString] = {
-        selected: true,
-        selectedColor: '#0a5f6a', // Matches your Done button color
-      };
-      setSelectedDates([...selectedDates, dateString].sort());
-    }
-    setMarkedDates(newMarkedDates);
-  };
+  // --- HANDLERS ---
 
   const addTake = () => setTakes([...takes, { time: "12:00", dose: 1 }]);
   
@@ -76,15 +60,34 @@ export default function AddMedicationScreen() {
 
   const onTimeChange = (event, selectedTime) => {
     if (Platform.OS === 'android') setShowTimePicker(false);
+    
     if (event.type === 'set' && selectedTime && currentTakeIndex !== null) {
       const hours = selectedTime.getHours().toString().padStart(2, '0');
       const minutes = selectedTime.getMinutes().toString().padStart(2, '0');
       const updated = [...takes];
       updated[currentTakeIndex].time = `${hours}:${minutes}`;
       setTakes(updated);
+      setTempDate(selectedTime);
     }
   };
 
+  const handleDayPress = (day) => {
+    const dateString = day.dateString;
+    let newMarkedDates = { ...markedDates };
+
+    if (newMarkedDates[dateString]) {
+      delete newMarkedDates[dateString];
+      setSelectedDates(selectedDates.filter(d => d !== dateString));
+    } else {
+      newMarkedDates[dateString] = {
+        selected: true,
+        selectedColor: '#0a5f6a',
+      };
+      setSelectedDates([...selectedDates, dateString].sort());
+    }
+    setMarkedDates(newMarkedDates);
+  };
+   
   const handleAddMedication = async () => {
     if (!name.trim()) {
       Alert.alert("Error", "Please enter medication name");
@@ -113,7 +116,6 @@ export default function AddMedicationScreen() {
         time: take.time,
         dose: take.dose
       }));
-
       await supabase.from('medication takes').insert(takesToInsert);
 
       if (scheduleType === "specific" && selectedDates.length > 0) {
@@ -125,9 +127,10 @@ export default function AddMedicationScreen() {
       }
 
       Alert.alert("Success", "Medication added successfully!");
+      
       setName("");
       setSelectedDates([]);
-      setMarkedDates({}); // Clear circles on reset
+      setMarkedDates({});
       setTakes([{ time: "09:00", dose: 2 }]);
     } catch (error) {
       Alert.alert("Error", error.message);
@@ -138,12 +141,20 @@ export default function AddMedicationScreen() {
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <Ionicons name="arrow-back-outline" size={26} color="#fff" />
+          <TouchableOpacity onPress={() => Alert.alert("Back", "Go back logic here")}>
+             <Ionicons name="arrow-back-outline" size={26} color="#fff" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.inputWrapper}>
           <Text style={styles.label}>Medication name</Text>
-          <TextInput placeholder="Enter name" placeholderTextColor="#8e8e8e" style={styles.input} value={name} onChangeText={setName} />
+          <TextInput 
+            placeholder="Enter name" 
+            placeholderTextColor="#8e8e8e" 
+            style={styles.input} 
+            value={name} 
+            onChangeText={setName} 
+          />
         </View>
 
         {takes.map((take, index) => (
@@ -152,12 +163,12 @@ export default function AddMedicationScreen() {
               <Text style={styles.cardTitle}>Take {index + 1}</Text>
               <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
                 {takes.length > 1 && (
-                    <TouchableOpacity onPress={() => removeTake(index)}>
-                        <Ionicons name="trash-outline" size={24} color="#d32f2f" />
-                    </TouchableOpacity>
+                  <TouchableOpacity onPress={() => removeTake(index)}>
+                    <Ionicons name="trash-outline" size={24} color="#d32f2f" />
+                  </TouchableOpacity>
                 )}
                 <TouchableOpacity style={styles.plusCircle} onPress={addTake}>
-                    <Ionicons name="add-circle-outline" size={29} color="#0b6f7c" />
+                  <Ionicons name="add-circle-outline" size={29} color="#0b6f7c" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -188,10 +199,16 @@ export default function AddMedicationScreen() {
         ))}
 
         <View style={styles.scheduleSelector}>
-          <TouchableOpacity style={[styles.scheduleBtn, scheduleType === "consecutive" && styles.scheduleBtnActive]} onPress={() => setScheduleType("consecutive")}>
+          <TouchableOpacity 
+            style={[styles.scheduleBtn, scheduleType === "consecutive" && styles.scheduleBtnActive]} 
+            onPress={() => setScheduleType("consecutive")}
+          >
             <Text style={[styles.scheduleBtnText, scheduleType === "consecutive" && styles.scheduleBtnTextActive]}>Consecutive Days</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.scheduleBtn, scheduleType === "specific" && styles.scheduleBtnActive]} onPress={() => setScheduleType("specific")}>
+          <TouchableOpacity 
+            style={[styles.scheduleBtn, scheduleType === "specific" && styles.scheduleBtnActive]} 
+            onPress={() => setScheduleType("specific")}
+          >
             <Text style={[styles.scheduleBtnText, scheduleType === "specific" && styles.scheduleBtnTextActive]}>Pick Specific Days</Text>
           </TouchableOpacity>
         </View>
@@ -218,7 +235,11 @@ export default function AddMedicationScreen() {
             <Text style={styles.cardTitle}>Treatment days</Text>
             <TouchableOpacity style={styles.dateBox} onPress={() => setShowCalendar(true)}>
               <Ionicons name="calendar-outline" size={20} color="#0b6f7c" />
-              <Text style={styles.dateText}>{selectedDates.length === 0 ? "Select days" : `${selectedDates.length} days selected`}</Text>
+              <Text style={styles.dateText}>
+                {selectedDates.length === 0 
+                ?"Select days" : 
+                `${selectedDates.length} days selected`}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -228,33 +249,44 @@ export default function AddMedicationScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* iOS Time Picker Modal */}
-      {showTimePicker && Platform.OS === 'ios' && (
-        <Modal transparent animationType="slide">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Time</Text>
-              <DateTimePicker value={tempDate} mode="time" is24Hour={true} display="spinner" onChange={onTimeChange} textColor="black" themeVariant="light" fontWeight="600"/>
-              <TouchableOpacity style={styles.fullWidthDoneBtn} onPress={() => setShowTimePicker(false)}>
-                <Text style={styles.modalDoneText}>Done</Text>
-              </TouchableOpacity>
+      {/* Time Picker Modal */}
+      {showTimePicker && (
+        Platform.OS === 'ios' ? (
+          <Modal transparent animationType="slide">
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Select Time</Text>
+                <DateTimePicker 
+                  value={tempDate} 
+                  mode="time" 
+                  is24Hour={true} 
+                  display="spinner" 
+                  onChange={onTimeChange} 
+                  textColor="black" 
+                  themeVariant="light"
+                />
+                <TouchableOpacity style={styles.fullWidthDoneBtn} onPress={() => setShowTimePicker(false)}>
+                  <Text style={styles.modalDoneText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+        ) : (
+          <DateTimePicker value={tempDate} mode="time" is24Hour={true} display="default" onChange={onTimeChange} />
+        )
       )}
 
-      {/* --- CALENDAR MODAL WITH MULTI-CIRCLE --- */}
+      {/* Calendar Modal */}
       {showCalendar && (
         <Modal transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Select treatment days</Text>
-              
               <Calendar
                 onDayPress={handleDayPress}
                 markedDates={markedDates}
                 theme={{
-                  todayTextColor: '#4b4d4d',
+                  todayTextColor: '#0a5f6a',
                   arrowColor: '#555',
                   selectedDayBackgroundColor: '#0a5f6a',
                   selectedDayTextColor: '#ffffff',
@@ -262,7 +294,6 @@ export default function AddMedicationScreen() {
                   textMonthFontWeight: 'bold',
                 }}
               />
-
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setShowCalendar(false)}>
                   <Text style={styles.modalDoneText}>Done</Text>
@@ -283,34 +314,34 @@ const styles = StyleSheet.create({
   label: { color: "#fff", fontSize: 18, marginBottom: 8, fontWeight: "700", marginLeft: 10 },
   inputWrapper: { marginBottom: 16 },
   input: { backgroundColor: "#e6e6e6", borderRadius: 20, paddingVertical: 12, paddingHorizontal: 20, fontSize: 16, height: 50 },
-  card: { backgroundColor: "#e6e6e6", borderRadius: 39, padding: 16, marginBottom: 20, height: 160 },
+  card: { backgroundColor: "#e6e6e6", borderRadius: 30, padding: 16, marginBottom: 20, height: 160 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   cardTitle: { fontSize: 20, fontWeight: "700", color: "#0b6f7c", paddingLeft: 4, paddingTop: 1 },
   plusCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#e6e6e6", justifyContent: "center", alignItems: "center" },
   row: { flexDirection: "row", justifyContent: "space-evenly", gap: 90, marginTop: 12 },
   smallLabel: { fontSize: 17, color: "#555", fontWeight: "700", marginBottom: 4 },
-  timeBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#C1C1C1", borderRadius: 16, height: 40, paddingHorizontal: 12, paddingLeft: 9, paddingVertical: 8 },
+  timeBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#C1C1C1", borderRadius: 16, height: 40, paddingHorizontal: 12 },
   timeText: { marginLeft: 5, fontWeight: "700", fontSize: 17, color: "#4F4F4F" },
   counter: { flexDirection: "row", alignItems: "center", backgroundColor: "#C1C1C1", borderRadius: 16, paddingHorizontal: 5, height: 40 },
   counterBtn: { paddingHorizontal: 10, paddingVertical: 4 },
   counterTextdose: { fontSize: 22, color: "#0b6f7c", fontWeight: "600" },
   counterValuedose: { fontSize: 18, fontWeight: "700", marginHorizontal: 6, color: "#4F4F4F" },
-  cardnodays: { backgroundColor: "#e6e6e6", borderRadius: 37, padding: 16, marginBottom: 20, height: 110 },
+  cardnodays: { backgroundColor: "#e6e6e6", borderRadius: 30, padding: 16, marginBottom: 20, height: 110 },
   counterCenter: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 10 },
   nodaysbox: { flexDirection: "row", alignItems: "center", backgroundColor: "#C1C1C1", borderRadius: 15, paddingHorizontal: 20, height: 40 },
   counterValuenodays: { fontSize: 20, fontWeight: "700", marginHorizontal: 6, color: "#4F4F4F" },
   counterTextnodays: { fontSize: 29, color: "#0b6f7c", fontWeight: "600" },
-  cardstartday: { backgroundColor: "#e6e6e6", borderRadius: 37, padding: 16, marginBottom: 20, height: 130 },
-  dateBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#C1C1C1", borderRadius: 20, paddingLeft: 22, marginTop: 10, height: 54, marginHorizontal: 70 },
+  cardstartday: { backgroundColor: "#e6e6e6", borderRadius: 30, padding: 16, marginBottom: 20, height: 130 },
+  dateBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#C1C1C1", borderRadius: 20, paddingLeft: 22, marginTop: 10, height: 54, marginHorizontal: 30 },
   dateText: { marginLeft: 8, fontWeight: "600", fontSize: 18, color: "#4F4F4F" },
   scheduleSelector: { flexDirection: "row", gap: 10, marginBottom: 20 },
   scheduleBtn: { flex: 1, backgroundColor: "#e6e6e6", borderRadius: 20, padding: 15, alignItems: "center" },
-  scheduleBtnActive: { backgroundColor: "#0b6f7c" },
+  scheduleBtnActive: { backgroundColor: "#06333f" },
   scheduleBtnText: { fontWeight: "700", color: "#555" },
   scheduleBtnTextActive: { color: "#fff" },
-  addBtn: { backgroundColor: "#0a5f6a", borderRadius: 30, paddingVertical: 14, alignItems: "center", marginTop: 10 },
+  addBtn: { backgroundColor: "#06333f", borderRadius: 30, paddingVertical: 14, alignItems: "center", marginTop: 10 },
   addText: { color: "#fff", fontSize: 19, fontWeight: "700" },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent:'flex-end' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#0b6f7c', textAlign: 'center', marginBottom: 15 },
   modalButtonsRow: { flexDirection: 'row', gap: 10, marginTop: 15 },

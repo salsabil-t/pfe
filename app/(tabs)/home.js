@@ -1,8 +1,23 @@
+<<<<<<< auth-pages
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import {
+  Alert,
+  Modal,
+  RefreshControl,
+=======
+import {
+>>>>>>> main
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+<<<<<<< auth-pages
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+=======
   TouchableOpacity,
   View,
   ActivityIndicator,
@@ -14,6 +29,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
+>>>>>>> main
 import { supabase } from '../lib/supabase';
 
 const formatTimeAmPm = (timeStr) => {

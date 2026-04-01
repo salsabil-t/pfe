@@ -1,8 +1,9 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   StyleSheet,
   Text,
@@ -17,8 +18,21 @@ export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const handleLogin = async () => {
+  const [loading, setLoading] = useState(true);
+   // Vérifie si déjà connecté au chargement
+  useEffect(() => {
+    checkUserSession();
+  }, []);
+
+  const checkUserSession = async () => {
     try {
+<<<<<<< auth-pages
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        // Déjà connecté, redirige vers home
+        router.replace("/(tabs)/confirmation");
+=======
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email,
         password: password,
@@ -28,12 +42,54 @@ export default function LoginScreen() {
         alert(error.message);
       } else {
         router.push('home');
+>>>>>>> main
       }
-    } catch (err) {
-      alert(err.message);
+    } catch (error) {
+      console.log("Erreur vérification session:", error);
+    } finally {
+      setLoading(false);
     }
   };
- 
+  const handleLogin = async () => {
+  if (!email || !password) {
+    alert("Please enter email and password");
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password: password,
+    });
+
+    if (error) {
+      alert(error.message);
+    } else {
+      // Session sauvegardée automatiquement par Supabase ✅
+      // Pas besoin d'AsyncStorage, Supabase gère ça pour toi !
+      router.push('/(tabs)/confirmation');
+    }
+  } catch (err) {
+    alert(err.message);
+  }
+};
+// ← Ajoute cet écran de chargement
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.topSection}>
+          <Image
+            source={require("../../assets/images/adn.png")}
+            style={styles.adn}
+          />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#0b4f5c" />
+          <Text style={{ marginTop: 10, color: '#0b4f5c' }}>Chargement...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

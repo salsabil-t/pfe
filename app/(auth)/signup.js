@@ -33,18 +33,13 @@ export default function SignUpScreen() {
       alert(error.message);
       return;
     } 
-      // Ajouter une ligne dans la table profiles
-    const { data: profileData, error: profileError } = await supabase
-      .from("profiles")
-      .insert([{ email: email }]);
-
-    if (profileError) {
-      alert(profileError.message);
-      return;
-    }
-    else {
+    {
       alert("Account created! You can now log in.");
+<<<<<<< auth-pages
+      router.push("/(auth)/login"); // redirige vers login après signup
+=======
       router.push("/(tabs)/home"); 
+>>>>>>> main
     }
   } catch (err) {
     alert("Something went wrong: " + err.message);
