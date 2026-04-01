@@ -131,25 +131,20 @@ function NotificationScreen({ navigation }) {
     };
   }, []);
 
- const fetchNotification = async () => {
-  try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+  const fetchNotification = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('notification')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    const { data, error } = await supabase
-      .from('notification')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    setNotification(data || []);
-  } catch (error) {
-    console.error('Erreur:', error);
-  }
-};
+      if (error) throw error;
+      setNotification(data || []);
+    } catch (error) {
+      console.error('Erreur:', error);
+      Alert.alert('Erreur', 'Impossible de charger les notification');
+    }
+  };
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -221,8 +216,7 @@ function NotificationScreen({ navigation }) {
     const hours = date.getHours().toString().padStart(2, '0');
     const minutes = date.getMinutes().toString().padStart(2, '0');
     const ampm = date.getHours() >= 12 ? 'PM' : 'AM';
-    return `${hours}:${minutes} ${ampm}`;
-    };
+    return $; { }  };
 
   const isToday = (timestamp) => {
     const today = new Date();
@@ -233,10 +227,8 @@ function NotificationScreen({ navigation }) {
       date.getFullYear() === today.getFullYear()
     );
   };
-
   const todayNotification = notification.filter((notif) => isToday(notif.created_at));
   const oldNotification = notification.filter((notif) => !isToday(notif.created_at));
-
   const displayedNotification = activeTab === 'today' ? todayNotification : oldNotification;
   const renderNotification = ({ item }) => (
     <TouchableOpacity
@@ -320,7 +312,7 @@ function NotificationScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Liste des notifications */}
+      {/* Liste des notification */}
       <FlatList
         data={displayedNotification}
         renderItem={renderNotification}
@@ -336,9 +328,15 @@ function NotificationScreen({ navigation }) {
           <Text style={styles.emptyText}>
             {activeTab === 'today' ? 'No notification today' : 'No old notification'}
           </Text>
+<<<<<<< auth-pages
         </View>} 
         />
         
+=======
+        </View>} />
+      {/* Bottom Navigation */}
+      
+>>>>>>> main
     </View>
     
   );

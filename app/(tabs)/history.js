@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
-import { supabase } from '../lib/supabase'; // Fixed import based on your setup
+import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
-const ITEM_WIDTH = 72; // Width + Margin
+const ITEM_WIDTH = 72; 
 
 export default function HistoryScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -23,12 +23,11 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
 
-  // 1. Generate 4-month date range and auto-scroll to today
+  // 1. Generate date range and auto-scroll to today
   useEffect(() => {
     const dates = [];
     const today = new Date();
     
-    // 60 days back and 60 days forward
     for (let i = -60; i <= 60; i++) {
       const d = new Date();
       d.setDate(today.getDate() + i);
@@ -36,7 +35,6 @@ export default function HistoryScreen() {
     }
     setDateRange(dates);
 
-    // Initial scroll to center 'Today'
     setTimeout(() => {
       if (scrollRef.current) {
         scrollRef.current.scrollTo({
@@ -59,12 +57,10 @@ export default function HistoryScreen() {
       const userId = session?.user?.id;
 
       if (!userId) {
-        Alert.alert("Not Logged In", "Please log in to see medications.");
         setLoading(false);
         return;
       }
 
-      // Format selected date to YYYY-MM-DD for DB comparison
       const selectedStr = selectedDate.toISOString().split('T')[0];
 
       // A. Get all meds belonging to the user
@@ -81,7 +77,7 @@ export default function HistoryScreen() {
 
       const medIds = meds.map(m => m.id);
 
-      // B. Get all take times and specific dates for these meds
+      // B. Get all take times and specific dates
       const { data: takes } = await supabase
         .from("medication takes")
         .select("*")
@@ -95,7 +91,7 @@ export default function HistoryScreen() {
 
       let dailyList = [];
 
-      // C. Filter logic: Decide what appears on the selected day
+      // C. Filter logic
       meds.forEach(med => {
         let isScheduled = false;
 
@@ -115,14 +111,14 @@ export default function HistoryScreen() {
           medTimes.forEach(take => {
             dailyList.push({
               name: med.name,
-              time: take.time, // Format: "HH:MM:SS"
+              time: take.time,
               dose: take.dose
             });
           });
         }
       });
 
-      // D. Group by time (so 09:00:00 shows Way, Tr, and His in ONE card)
+      // D. Group by time
       const grouped = dailyList.reduce((acc, item) => {
         const existing = acc.find(g => g.time === item.time);
         if (existing) {
@@ -132,7 +128,7 @@ export default function HistoryScreen() {
         }
         return acc;
       }, []);
-      // Sort by time ascending
+
       setMedications(grouped.sort((a, b) => a.time.localeCompare(b.time)));
 
     } catch (err) {
@@ -157,7 +153,7 @@ export default function HistoryScreen() {
         <TouchableOpacity>
            <Ionicons name="arrow-back" size={28} color="white" />
         </TouchableOpacity>
-       
+        <Text style={styles.headerTitle}>History</Text>
       </View>
 
       <View style={styles.dateBar}>
@@ -224,6 +220,7 @@ export default function HistoryScreen() {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0b4f5c" },
   header: { flexDirection: "row", alignItems: "center", padding: 20, marginTop: 10 },
@@ -231,10 +228,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
   dateBar: { paddingLeft: 20, marginBottom: 15, height: 100 },
   dateCard: { backgroundColor: "#D9D9D9", width: 60, height: 90, borderRadius: 15, justifyContent: "center", alignItems: "center", marginRight: 12 },
-  selectedCard: { backgroundColor: "#06333f", borderWidth: 1, borderColor: "#7DD1E0", transform: [{ scale: 1.05 }] },
-  monthText: { fontSize: 10, fontWeight: "bold", color: "#06333f" },
-  dateNum: { fontSize: 18, fontWeight: "bold", color: "#06333f" },
-  dateDay: { fontSize: 11, color: "#06333f" },
+  selectedCard: { backgroundColor: "#4D595B", borderWidth: 1, borderColor: "#7DD1E0" },
+  monthText: { fontSize: 10, fontWeight: "bold", color: "#06303A" },
+  dateNum: { fontSize: 18, fontWeight: "bold", color: "#06303A" },
+  dateDay: { fontSize: 11, color: "#06303A" },
   selectedText: { color: "#7DD1E0" },
   content: { flex: 1, paddingHorizontal: 20 },
   timelineRow: { flexDirection: "row", minHeight: 100 },
@@ -242,9 +239,9 @@ const styles = StyleSheet.create({
   dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "white", marginTop: 40 },
   line: { width: 2, flex: 1, backgroundColor: "rgba(255,255,255,0.3)" },
   medCard: { flex: 1, backgroundColor: "#D9D9D9", borderRadius: 20, padding: 20, marginVertical: 10, flexDirection: "row", alignItems: "center" },
-  timeLabel: { fontSize: 16, fontWeight: "bold", color: "#06333f", width: 80 },
+  timeLabel: { fontSize: 16, fontWeight: "bold", color: "#06303A", width: 80 },
   medItemsContainer: { flex: 1, borderLeftWidth: 1, borderLeftColor: "#BDC3C7", paddingLeft: 15 },
   medRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  medNameText: { fontSize: 16, color: "#06333f", marginLeft: 8 },
-  emptyText: { color: "rgba(255,255,255,0.7)", fontSize: 16 }
+  medNameText: { fontSize: 16, color: "#06303A", marginLeft: 8 },
+  emptyText: { color: "rgba(255,255,255,0.5)", fontSize: 16 }
 });

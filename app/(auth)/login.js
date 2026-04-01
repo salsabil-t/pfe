@@ -26,11 +26,23 @@ export default function LoginScreen() {
 
   const checkUserSession = async () => {
     try {
+<<<<<<< auth-pages
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session) {
         // Déjà connecté, redirige vers home
         router.replace("/(tabs)/confirmation");
+=======
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email,
+        password: password,
+      });
+
+      if (error) {
+        alert(error.message);
+      } else {
+        router.push('home');
+>>>>>>> main
       }
     } catch (error) {
       console.log("Erreur vérification session:", error);
@@ -125,7 +137,7 @@ export default function LoginScreen() {
           <Ionicons name="lock-closed-outline" size={20} color="#0b4f5c" />
           <TextInput
             placeholder="Password"
-             placeholderTextColor={"#555"}
+            placeholderTextColor={"#555"}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -212,7 +224,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 10,
     fontSize: 16,
-    marginLeft: 10
+    marginLeft: 10,
+    
   },
   button: {
     backgroundColor: "#0b4f5c",
