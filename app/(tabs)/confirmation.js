@@ -117,6 +117,25 @@ console.log("Médicament le plus proche trouvé à:", scheduledTake.time);
         setLoading(false);
         return;
       }
+       // ✅ AJOUT DE LA NOTIFICATION POUR LE FILS (taken)
+      const { error: notifError } = await supabase
+        .from('notification')
+        .insert({
+          user_id: session.user.id, // ✅ ID du FILS (destinataire de la notif)
+          medication_id: scheduledTake.medication_id,
+          scheduled_time: scheduledTake.time,
+          type: 'taken', 
+          message: ` Medication was scheduled at ${scheduledTake.time.slice(0, 5)} was taken`,
+          show_call_button: false, 
+          is_read: false,
+          created_at: now.toISOString(), // Date de création de la notification
+        });
+
+      if (notifError) {
+        console.error("Erreur création notification taken:", notifError);
+        // On n'affiche pas d'alerte à l'utilisateur ici, pour ne pas le perturber.
+      }
+
       // === 2.7 Succès ! Affiche message et redirige vers Home ===
       Alert.alert("Success", "✅ Medication confirmed!");
       router.push('/(tabs)/home');

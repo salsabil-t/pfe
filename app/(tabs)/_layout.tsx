@@ -18,12 +18,14 @@ export default function TabLayout() {
         },
       }}>
       
-      {/* Confirmation (caché de la navbar) */}
+      {/* Confirmation */}
       <Tabs.Screen
         name="confirmation"
         options={{
-          href: null,
-          title: 'Confirmation',
+          title: 'Confirm',
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="checkmark-circle" size={30} color={color} />
+        ),
         }}
       />
       

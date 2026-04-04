@@ -39,7 +39,20 @@ function NotificationScreen({ navigation }) {
 
     // Pour chaque médicament programmé
     for (const take of allTakes) {
-      const scheduledTime = take.time; // "09:00:00"
+      const scheduledTime = take.time; 
+      // ✅ AJOUTE CETTE VÉRIFICATION AU DÉBUT :
+  
+  // Vérifie si ce médicament était programmé AUJOURD'HUI
+       const { data: scheduledToday } = await supabase
+      .from('medication_dates')
+      .select('*')
+      .eq('medication_id', take.medication_id)
+      .eq('scheduled_date', currentDate);
+  
+     // Si PAS programmé aujourd'hui, skip !
+     if (!scheduledToday || scheduledToday.length === 0) {
+     continue; // ← PASSE AU SUIVANT
+     }
       
       // Calcule la différence en minutes
       const [schedHour, schedMin] = scheduledTime.split(':').map(Number);
@@ -106,30 +119,34 @@ function NotificationScreen({ navigation }) {
 };
 
   useEffect(() => {
-    fetchNotification();
-    checkMissedMedications();
-    const checkInterval = setInterval(checkMissedMedications, 30 * 1000);
-    const subscription = supabase
-      .channel('notification-channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notification',
-        },
-        (payload) => {
-          console.log('Changement détecté:', payload);
-          fetchNotification();
-        }
-      )
-      .subscribe();
+  fetchNotification();
+  checkMissedMedications(); 
+  const checkInterval = setInterval(checkMissedMedications, 30 * 1000);
 
-    return () => {
-      clearInterval(checkInterval); // ✅ Nettoie l'intervalle
-      subscription.unsubscribe();
-    };
-  }, []);
+  // Canal 1 : Écoute les changements dans la table 'notification' (votre code actuel)
+  const notificationSubscription = supabase
+    .channel('notification-channel')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'notification',
+      },
+      (payload) => {
+        console.log('Notification changée:', payload);
+        fetchNotification();
+      }
+    )
+    .subscribe();
+
+  
+  return () => {
+    clearInterval(checkInterval);
+    notificationSubscription.unsubscribe();
+    logsSubscription.unsubscribe(); 
+  };
+}, []);
 
  const fetchNotification = async () => {
   try {
@@ -170,7 +187,7 @@ function NotificationScreen({ navigation }) {
       console.error('Erreur:', error);
     }
   };
-
+  
   const deleteNotification = async (id) => {
     Alert.alert(
       '🗑️ Delete Notification',
@@ -257,7 +274,8 @@ function NotificationScreen({ navigation }) {
           <Text style={styles.messageText}>{item.message}</Text>
         </View>
 
-        {/* Bouton Call */}
+        
+        {/* ✅ BOUTON CALL : N'apparaît que si show_call_button est à true */}
         {item.show_call_button && (
           <TouchableOpacity
             style={styles.callButton}
