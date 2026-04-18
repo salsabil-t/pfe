@@ -49,8 +49,8 @@ export default function ConfirmationScreen() {
         .select('*')
         .eq('user_id', session.user.id)      // Pour cet utilisateur
         .eq('scheduled_date', currentDate)             // Aujourd'hui
-        .maybeSingle();                      // Retourne 1 résultat ou null
-
+        .maybeSingle();       
+                   
       if (dateError) {
         console.error("Date error:", dateError);
       }
@@ -91,6 +91,7 @@ export default function ConfirmationScreen() {
     scheduledTake = take;
   }
 }
+  
 
 if (!scheduledTake) {
   Alert.alert("No medication", "No medication scheduled");
@@ -125,7 +126,7 @@ console.log("Médicament le plus proche trouvé à:", scheduledTake.time);
           medication_id: scheduledTake.medication_id,
           scheduled_time: scheduledTake.time,
           type: 'taken', 
-          message: ` Medication was scheduled at ${scheduledTake.time.slice(0, 5)} was taken`,
+          message: ` The medication scheduled at ${scheduledTake.time.slice(0, 5)} was taken`,
           show_call_button: false, 
           is_read: false,
           created_at: now.toISOString(), // Date de création de la notification

@@ -29,7 +29,7 @@ export default function LoginScreen() {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session) {
-        // Déjà connecté, redirige vers home
+       
         router.replace("/(tabs)/confirmation");
       }
     } catch (error) {

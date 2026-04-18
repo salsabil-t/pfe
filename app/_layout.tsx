@@ -1,49 +1,36 @@
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Tabs } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { Stack, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
- 
-  
+export default function RootLayout() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // ✅ Écoute les clics sur les notifications
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('Notification cliquée !', response);
+      
+      // On récupère les données cachées dans la notification
+      const data :any = response.notification.request.content.data;
+
+      // ✅ Redirige vers la page Confirmation avec l'ID en paramètre
+      router.push({
+        pathname: '/(tabs)/confirmation',
+        params: { medId: data.medicationId } 
+      });
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  // ⚠️ AJOUT DU RETURN ICI POUR FIXER L'ÉCRAN BLANC
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor:"#0b4f5c",
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarStyle: { display: 'none' }, // ← CETTE LIGNE !
-        tabBarInactiveTintColor: "#8e8e8e"
-      }}>
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={30} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="history"
-        options={{
-          title: 'History',
-          tabBarIcon: ({ color }) => <IconSymbol size={30} name="clock.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="notification"
-        options={{
-          title: 'Notification',
-          tabBarIcon: ({ color }) => <IconSymbol size={30} name="bell.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="add"
-        options={{
-          title: 'Add',
-          tabBarIcon: ({ color }) => <IconSymbol size={30} name="plus.circle.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* Par défaut, on affiche l'authentification (Login/Signup) */}
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      
+      {/* Une fois connecté, on affiche les onglets */}
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    </Stack>
   );
 }
