@@ -1,18 +1,18 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 export default function HomeScreen() {

@@ -56,7 +56,7 @@ if (password !== confirmPassword) {
     }
     {
       alert("Account created! You can now log in.");
-      router.push("/(auth)/login"); // redirige vers login après signup
+      router.push("/(tabs)/home"); 
     }
   } catch (err) {
     alert("Something went wrong: " + err.message);
