@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 LogBox.ignoreLogs([
   'expo-notifications: Android Push notifications',
 ]);
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -28,8 +29,9 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+
 // Configuration du canal d'alarme 
- if (Platform.OS === 'android') {
+if (Platform.OS === 'android') {
   Notifications.setNotificationChannelAsync('medication-alarm-v2', {
     name: 'Urgent Medication Alarm',
     importance: Notifications.AndroidImportance.MAX,
@@ -37,12 +39,10 @@ Notifications.setNotificationHandler({
     sound: 'default',
     enableLights: true,
     lightColor: '#FF0000',
-    // Permet d'afficher le contenu même sur l'écran verrouillé
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, 
   });
-};
-  
-// Function for T-15 Minute Reminder
+}
+
 const scheduleReminder = async (medName, scheduledDate) => {
   const trigger = new Date(scheduledDate);
   trigger.setMinutes(trigger.getMinutes() - 15);
@@ -51,7 +51,7 @@ const scheduleReminder = async (medName, scheduledDate) => {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "Upcoming Medication 💊",
-        body: `⏰It's almost time for your ${medName}. Please get it ready.`,
+        body: `⏰ It's almost time for your ${medName}. Please get it ready.`,
         sound: 'default',
       },
       trigger: {
@@ -61,20 +61,20 @@ const scheduleReminder = async (medName, scheduledDate) => {
     });
   }
 };
-// Function for Exact Time Alarm
+
 const scheduleMainAlarm = async (medName, scheduledDate) => {
   if (scheduledDate > new Date()) {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: "🚨 MEDICATION TIME! 🔔",
-        body: ` Take your ${medName} now and confirm in the app.`,
-        sound: 'default', // Sur Android, tu peux configurer un son plus fort via les Channels
+        body: `Take your ${medName} now and confirm in the app.`,
+        sound: 'default',
         priority: Notifications.AndroidNotificationPriority.MAX,
-        vibrate: [0, 500, 500, 500], // Vibration sur iOS
+        vibrate: [0, 500, 500, 500],
         badge: 1,
-        color:'#FF0000',
-         android: {
-          channelId: 'medication-alarm-v2', // On change d'ID pour forcer la mise à jour
+        color: '#FF0000',
+        android: {
+          channelId: 'medication-alarm-v2',
           color: '#FF0000',
           vibrate: [0, 500, 250, 500, 250, 500],
         },
@@ -93,34 +93,28 @@ const scheduleMainAlarm = async (medName, scheduledDate) => {
 
 export default function AddMedicationScreen() {
   useEffect(() => {
-  const requestPermissions = async () => {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        "Permissions Required", 
-        "Please enable notifications in settings to receive medication reminders."
-      );
-    }
-  };
-  requestPermissions();
-}, []);
-  // --- STATE ---
+    const requestPermissions = async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          "Permissions Required", 
+          "Please enable notifications in settings to receive medication reminders."
+        );
+      }
+    };
+    requestPermissions();
+  }, []);
+
   const [name, setName] = useState("");
   const [scheduleType, setScheduleType] = useState("consecutive");
   const [days, setDays] = useState(12);
   const [takes, setTakes] = useState([{ time: "09:00", dose: 2 }]);
-  
-  // Calendar States
   const [selectedDates, setSelectedDates] = useState([]);
   const [markedDates, setMarkedDates] = useState({});
   const [showCalendar, setShowCalendar] = useState(false);
-  
-  // Time Picker States
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [currentTakeIndex, setCurrentTakeIndex] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
-
-  // --- HANDLERS ---
 
   const addTake = () => setTakes([...takes, { time: "12:00", dose: 1 }]);
   
@@ -174,12 +168,13 @@ export default function AddMedicationScreen() {
     }
     setMarkedDates(newMarkedDates);
   };
-   
+
   const handleAddMedication = async () => {
     if (!name.trim()) {
       Alert.alert("Error", "Please enter medication name");
       return;
     }
+
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error("Not logged in");
@@ -203,6 +198,8 @@ export default function AddMedicationScreen() {
         time: take.time,
         dose: take.dose
       }));
+      
+      // Fixed: Duplicate insert call removed from here
       await supabase.from('medication takes').insert(takesToInsert);
 
       if (scheduleType === "specific" && selectedDates.length > 0) {
@@ -213,32 +210,26 @@ export default function AddMedicationScreen() {
         await supabase.from('medication_dates').insert(datesToInsert);
       }
 
-      Alert.alert("Success", "Medication added successfully!");
-      await supabase.from('medication takes').insert(takesToInsert);
+      try {
+        for (const take of takes) {
+          const [hours, minutes] = take.time.split(':');
+          const now = new Date();
+          const triggerDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hours), parseInt(minutes), 0);
 
-// --- AJOUT DES ALARMES ICI ---
-  try {
-  for (const take of takes) {
-    const [hours, minutes] = take.time.split(':');
-    
-    // Si c'est pour "Aujourd'hui"
-    const now = new Date();
-    const triggerDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hours), parseInt(minutes), 0);
-
-    // Planification
-      await scheduleReminder(name.trim(), triggerDate);
-      await scheduleMainAlarm(name.trim(), triggerDate);
-      }
+          await scheduleReminder(name.trim(), triggerDate);
+          await scheduleMainAlarm(name.trim(), triggerDate);
+        }
       } catch (notificationError) {
-      console.error("Notification Error:", notificationError);
+        console.error("Notification Error:", notificationError);
       }
 
-     Alert.alert("Success", "Medication added and alarms scheduled!");
+      Alert.alert("Success", "Medication added and alarms scheduled!");
       
       setName("");
       setSelectedDates([]);
       setMarkedDates({});
       setTakes([{ time: "09:00", dose: 2 }]);
+      
     } catch (error) {
       Alert.alert("Error", error.message);
     }
@@ -327,6 +318,7 @@ export default function AddMedicationScreen() {
               <TouchableOpacity style={styles.counterBtn} onPress={() => setDays(Math.max(1, days - 1))}>
                 <Text style={styles.counterTextnodays}>−</Text>
               </TouchableOpacity>
+              {/* Fixed: div changed to View */}
               <View style={styles.nodaysbox}>
                 <Text style={styles.counterValuenodays}>{days}</Text>
               </View>
@@ -356,7 +348,6 @@ export default function AddMedicationScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Time Picker Modal */}
       {showTimePicker && (
         Platform.OS === 'ios' ? (
           <Modal transparent animationType="slide">
@@ -383,7 +374,6 @@ export default function AddMedicationScreen() {
         )
       )}
 
-      {/* Calendar Modal */}
       {showCalendar && (
         <Modal transparent animationType="slide">
           <View style={styles.modalOverlay}>
