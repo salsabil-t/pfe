@@ -26,15 +26,11 @@ export default function LoginScreen() {
 
   const checkUserSession = async () => {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
-      });
-
-      if (error) {
-        alert(error.message);
-      } else {
-        router.push('home');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+       
+        router.replace("/(tabs)/confirmation");
       }
     } catch (error) {
       console.log("Erreur vérification session:", error);

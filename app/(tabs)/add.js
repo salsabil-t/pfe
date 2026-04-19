@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useState } from "react";
+import * as Notifications from 'expo-notifications';
+import { useEffect, useState } from "react";
 import {
   Alert,
   Keyboard,
+  LogBox,
   Modal,
   Platform,
   ScrollView,
@@ -16,7 +18,92 @@ import {
 import { Calendar } from 'react-native-calendars';
 import { supabase } from '../lib/supabase';
 
+LogBox.ignoreLogs([
+  'expo-notifications: Android Push notifications',
+]);
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+// Configuration du canal d'alarme 
+ if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('medication-alarm-v2', {
+    name: 'Urgent Medication Alarm',
+    importance: Notifications.AndroidImportance.MAX,
+    vibrationPattern: [0, 500, 250, 500, 250, 500],
+    sound: 'default',
+    enableLights: true,
+    lightColor: '#FF0000',
+    // Permet d'afficher le contenu même sur l'écran verrouillé
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, 
+  });
+};
+  
+// Function for T-15 Minute Reminder
+const scheduleReminder = async (medName, scheduledDate) => {
+  const trigger = new Date(scheduledDate);
+  trigger.setMinutes(trigger.getMinutes() - 15);
+
+  if (trigger > new Date()) {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Upcoming Medication 💊",
+        body: `⏰It's almost time for your ${medName}. Please get it ready.`,
+        sound: 'default',
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: trigger,
+      },
+    });
+  }
+};
+// Function for Exact Time Alarm
+const scheduleMainAlarm = async (medName, scheduledDate) => {
+  if (scheduledDate > new Date()) {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "🚨 MEDICATION TIME! 🔔",
+        body: ` Take your ${medName} now and confirm in the app.`,
+        sound: 'default', // Sur Android, tu peux configurer un son plus fort via les Channels
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        vibrate: [0, 500, 500, 500], // Vibration sur iOS
+        badge: 1,
+        color:'#FF0000',
+         android: {
+          channelId: 'medication-alarm-v2', // On change d'ID pour forcer la mise à jour
+          color: '#FF0000',
+          vibrate: [0, 500, 250, 500, 250, 500],
+        },
+        data: {
+          medicationName: medName,
+          type: 'alarm',
+        },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: scheduledDate,
+      }, 
+    });
+  }
+};
+
 export default function AddMedicationScreen() {
+  useEffect(() => {
+  const requestPermissions = async () => {
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        "Permissions Required", 
+        "Please enable notifications in settings to receive medication reminders."
+      );
+    }
+  };
+  requestPermissions();
+}, []);
   // --- STATE ---
   const [name, setName] = useState("");
   const [scheduleType, setScheduleType] = useState("consecutive");
@@ -127,6 +214,26 @@ export default function AddMedicationScreen() {
       }
 
       Alert.alert("Success", "Medication added successfully!");
+      await supabase.from('medication takes').insert(takesToInsert);
+
+// --- AJOUT DES ALARMES ICI ---
+  try {
+  for (const take of takes) {
+    const [hours, minutes] = take.time.split(':');
+    
+    // Si c'est pour "Aujourd'hui"
+    const now = new Date();
+    const triggerDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(hours), parseInt(minutes), 0);
+
+    // Planification
+      await scheduleReminder(name.trim(), triggerDate);
+      await scheduleMainAlarm(name.trim(), triggerDate);
+      }
+      } catch (notificationError) {
+      console.error("Notification Error:", notificationError);
+      }
+
+     Alert.alert("Success", "Medication added and alarms scheduled!");
       
       setName("");
       setSelectedDates([]);

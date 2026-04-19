@@ -34,14 +34,21 @@ function NotificationScreen({ navigation }) {
       .from('medication takes')
       .select('*')
       .eq('user_id', user.id);
-
+   
     if (!allTakes || allTakes.length === 0) return;
 
     // Pour chaque médicament programmé
     for (const take of allTakes) {
       const scheduledTime = take.time; 
       // ✅ AJOUTE CETTE VÉRIFICATION AU DÉBUT :
-  
+    const { data: medData } = await supabase  
+      .from('add med table') // Le nom de votre table principale
+      .select('name')
+      .eq('id', take.medication_id)
+      .single();
+
+     const medName = medData?.name || "Unknown Medication";
+
   // Vérifie si ce médicament était programmé AUJOURD'HUI
        const { data: scheduledToday } = await supabase
       .from('medication_dates')
@@ -63,8 +70,8 @@ function NotificationScreen({ navigation }) {
       
       const differenceMinutes = nowMinutes - scheduledMinutes;
       
-      // Si dépassé de plus de 15 minutes
-      if (differenceMinutes > 2) {
+      // Si dépassé de plus de 10 minutes
+      if (differenceMinutes > 10) {
         // Vérifie si déjà pris dans medication_logs
         const { data: logs } = await supabase
           .from('medication_logs')
@@ -87,18 +94,25 @@ function NotificationScreen({ navigation }) {
 
           // Si notification pas encore créée
           if (!existingNotif || existingNotif.length === 0) {
+             const { data: profileData } = await supabase
+              .from('profiles')
+              .select('phone_number')
+              .eq('id', user.id)
+              .single();
+              const userPhone = profileData ?.phone_number;
             // Crée notification "missed"
             await supabase.from('notification').insert({
               user_id: user.id,
               medication_id: take.medication_id,
               scheduled_time: scheduledTime,
               type: 'missed',
-              message: `Medication scheduled at ${scheduledTime.slice(0, 5)} was not taken`,
+              message: `The medication "${medName}" scheduled at ${scheduledTime.slice(0, 5)} was not taken`,
               show_call_button: true,
+              phone_number: userPhone,
               is_read: false,
               created_at: now.toISOString(),
             });
-
+    
             // Marque aussi dans medication_logs comme "missed"
             await supabase.from('medication_logs').insert({
               user_id: user.id,
@@ -144,7 +158,7 @@ function NotificationScreen({ navigation }) {
   return () => {
     clearInterval(checkInterval);
     notificationSubscription.unsubscribe();
-    logsSubscription.unsubscribe(); 
+    
   };
 }, []);
 
@@ -217,7 +231,7 @@ function NotificationScreen({ navigation }) {
 
   const makeCall = (phoneNumber) => {
     if (!phoneNumber) {
-      Alert.alert('Erreur', '📞 Call Reminder');
+      Alert.alert('Erreur', '📞 Phone number not found');
       return;
     }
 
@@ -227,7 +241,7 @@ function NotificationScreen({ navigation }) {
         if (supported) {
           Linking.openURL(url);
         } else {
-          Alert.alert('Erreur', 'Impossible d\'ouvrir le composeur téléphonique');
+          Alert.alert('Erreur', 'Unable to open the phone dialer');
         }
       })
       .catch((err) => console.error('Call error:', err));

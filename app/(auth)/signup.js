@@ -17,22 +17,43 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const handleSignup = async () => {
-  if (!email || !password) {
-    alert("Please enter email and password");
+  
+ const handleSignup = async () => {
+  if (!email || !password || !confirmPassword) {
+    alert("Please enter fields");
     return;
+  }
+if (password !== confirmPassword) {
+    alert("Passwords do not match");
+    return;
+  }
+  let formattedPhone = phone;
+  if (phone.startsWith("0")) {
+    formattedPhone = "+213" + phone.substring(1);
   }
 
   try {
     const { data, error } = await supabase.auth.signUp({
       email: email,
       password: password,
+     
     });
 
     if (error) {
       alert(error.message);
       return;
     } 
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .upsert({
+        id: data.user.id,
+        email: email,
+        phone_number: formattedPhone,
+      });
+
+    if (profileError) {
+      console.log("PROFILE ERROR:", profileError);
+    }
     {
       alert("Account created! You can now log in.");
       router.push("/(tabs)/home"); 
@@ -42,7 +63,6 @@ export default function SignUpScreen() {
   }
 };
   
-
   return (
      
     <View style={styles.container}>
@@ -108,7 +128,7 @@ export default function SignUpScreen() {
             placeholder="Phone"
             placeholderTextColor={"#555"}
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={(text) => {setPhone(text)}}
             style={styles.input}
             keyboardType="phone-pad"
           />
