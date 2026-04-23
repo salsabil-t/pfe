@@ -29,7 +29,8 @@ export default function AddMedicationScreen() {
   const [name, setName] = useState("");
   const [scheduleType, setScheduleType] = useState("consecutive");
   const [days, setDays] = useState(7);
-  const [takes, setTakes] = useState([{ time: "09:00", dose: "1" }]);
+  // Default dose set to "1.0" as a string for the input
+  const [takes, setTakes] = useState([{ time: "09:00", dose: "1.0" }]);
   const [selectedDates, setSelectedDates] = useState([]);
   const [markedDates, setMarkedDates] = useState({});
   const [showCalendar, setShowCalendar] = useState(false);
@@ -70,6 +71,7 @@ export default function AddMedicationScreen() {
     }
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      
       const { data: medData, error: medError } = await supabase
         .from('medication')
         .upsert({ name: name.trim(), created_by: user.id }, { onConflict: 'name,created_by' })
@@ -93,8 +95,10 @@ export default function AddMedicationScreen() {
       const takesToInsert = takes.map(take => ({
         patient_medication_id: patientMed.id,
         time: take.time,
-        dose: take.dose
+        // Parse the string dose to a float before sending to Supabase
+        dose: parseFloat(take.dose) || 1.0 
       }));
+      
       await supabase.from('schedule').insert(takesToInsert);
 
       if (scheduleType === "specific" && selectedDates.length > 0) {
@@ -116,7 +120,7 @@ export default function AddMedicationScreen() {
     setName("");
     setSelectedDates([]);
     setMarkedDates({});
-    setTakes([{ time: "09:00", dose: "1" }]);
+    setTakes([{ time: "09:00", dose: "1.0" }]);
   };
 
   const openTimePicker = (index) => {
@@ -148,6 +152,7 @@ export default function AddMedicationScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Patient Selector */}
         <View style={styles.inputWrapper}>
           <Text style={styles.label}>Select Patient</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -159,11 +164,13 @@ export default function AddMedicationScreen() {
           </ScrollView>
         </View>
 
+        {/* Name Input */}
         <View style={styles.inputWrapper}>
           <Text style={styles.label}>Medication name</Text>
-          <TextInput placeholder="e.g. Paracetamol" style={styles.input} value={name} onChangeText={setName} />
+          <TextInput placeholder="e.g. Paracetamol" placeholderTextColor="#888" style={styles.input} value={name} onChangeText={setName} />
         </View>
 
+        {/* Takes List */}
         {takes.map((take, index) => (
           <View key={index} style={styles.card}>
             <View style={styles.cardHeader}>
@@ -183,16 +190,26 @@ export default function AddMedicationScreen() {
               <View style={styles.column}>
                 <Text style={styles.miniLabel}>Pill</Text>
                 <View style={styles.takeInputBox}>
-                  <TextInput style={styles.pillInput} value={take.dose} placeholder="1" onChangeText={(txt) => {
-                    const up = [...takes]; up[index].dose = txt; setTakes(up);
-                  }} />
+                  <TextInput 
+                    style={styles.pillInput} 
+                    value={take.dose} 
+                    placeholder="1.0" 
+                    keyboardType="decimal-pad" // Shows numbers and decimal point
+                    onChangeText={(txt) => {
+                      // Allow only numbers and one decimal point
+                      const formatted = txt.replace(/[^0-9.]/g, '');
+                      const up = [...takes]; 
+                      up[index].dose = formatted; 
+                      setTakes(up);
+                    }} 
+                  />
                 </View>
               </View>
             </View>
           </View>
         ))}
 
-        <TouchableOpacity style={styles.addTakeBtn} onPress={() => setTakes([...takes, { time: "12:00", dose: "1" }])}>
+        <TouchableOpacity style={styles.addTakeBtn} onPress={() => setTakes([...takes, { time: "12:00", dose: "1.0" }])}>
           <Ionicons name="add-circle" size={24} color="#7DD1E0" />
           <Text style={styles.addTakeText}>Add another take</Text>
         </TouchableOpacity>
@@ -267,6 +284,7 @@ export default function AddMedicationScreen() {
   );
 }
 
+// ... styles remain the same as your previous version ...
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0b4f5c" },
   scrollContent: { padding: 20, paddingTop: 60 },
@@ -285,7 +303,7 @@ const styles = StyleSheet.create({
   miniLabel: { fontSize: 11, color: "#0b6f7c", fontWeight: "bold", marginBottom: 5, textTransform: "uppercase" },
   takeInputBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#ddd", borderRadius: 15, height: 45, paddingHorizontal: 10 },
   timeText: { marginLeft: 5, fontWeight: "bold" },
-  pillInput: { flex: 1, fontWeight: "bold", textAlign: "center" },
+  pillInput: { flex: 1, fontWeight: "bold", textAlign: "center", color: "#0b4f5c" },
   addTakeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   addTakeText: { color: '#7DD1E0', marginLeft: 8, fontWeight: 'bold' },
   scheduleSelector: { flexDirection: "row", gap: 10, marginBottom: 15 },
