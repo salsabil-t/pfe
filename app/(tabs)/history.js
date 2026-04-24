@@ -216,12 +216,7 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity>
-          <Ionicons name="arrow-back" size={28} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>History</Text>
-      </View>
+      
 
       {/* Patient Selection Bar */}
       <View style={styles.patientWrapper}>
