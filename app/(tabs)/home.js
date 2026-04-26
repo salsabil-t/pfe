@@ -1,18 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import {
+  Alert,
+  Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  RefreshControl,
-  Modal,
   TextInput,
-  Alert,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
 export default function HomeScreen() {
@@ -34,7 +33,7 @@ export default function HomeScreen() {
 
   useEffect(() => { loadData(); }, []);
 
-  useEffect(() => {
+  useEffect(() => {   //Whenever patient changes → recompute schedule + stock
     if (selectedPatient) {
       fetchTodaySchedule(selectedPatient.id);
       fetchMedicationStock(selectedPatient.id);
@@ -124,6 +123,11 @@ export default function HomeScreen() {
     setMedicationStock(stockList);
   };
 
+  // Removes the item from the local array without updating the database
+  const removeStockItemUI = (id) => {
+    setMedicationStock(prev => prev.filter(item => item.id !== id));
+  };
+
   const isTimeInFuture = (timeStr) => {
     const [h, m] = timeStr.split(':');
     const medTime = new Date();
@@ -183,7 +187,7 @@ export default function HomeScreen() {
           </ScrollView>
         </View>
 
-        {/* BRINGING BACK THE PATIENT CARD */}
+        {/* Patient Card */}
         {selectedPatient && (
           <View style={styles.sectionContainer}>
             <TouchableOpacity style={styles.patientCard} onPress={() => { setEditingPatient(selectedPatient); setEditName(selectedPatient.name); setEditAge(selectedPatient.age?.toString()); setEditDisease(selectedPatient.disease); setEditPhone(selectedPatient.phone_number); setShowPatientModal(true); }}>
@@ -225,7 +229,21 @@ export default function HomeScreen() {
               {medicationStock.map(item => (
                 <View key={item.id} style={styles.stockRow}>
                   <Text style={styles.stockNameLabel}>{item.name}:</Text>
-                  <Text style={[styles.stockDaysValue, { color: item.daysRemaining < 3 ? '#e74c3c' : '#555' }]}>{item.daysRemaining} days left</Text>
+                  
+                  {/* Container for Days Text & Trash Icon */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={[styles.stockDaysValue, { color: item.daysRemaining < 3 ? '#e74c3c' : '#555', marginRight: item.daysRemaining === 0 ? 10 : 0 }]}>
+                      {item.daysRemaining} days left
+                    </Text>
+                    
+                    {/* Render Trash Icon ONLY if days = 0 */}
+                    {item.daysRemaining === 0 && (
+                      <TouchableOpacity onPress={() => removeStockItemUI(item.id)}>
+                        <Ionicons name="trash-outline" size={20} color="#e74c3c" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  
                 </View>
               ))}
             </View>
@@ -258,10 +276,10 @@ const styles = StyleSheet.create({
   helloText: { color: '#fff', fontSize: 16 },
   userTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
   profileIconCircle: { backgroundColor: '#fff', padding: 8, borderRadius: 50 },
-  sectionContainer: { paddingHorizontal: 20, marginBottom: 9 }, // Increased bottom margin
+  sectionContainer: { paddingHorizontal: 20, marginBottom: 9 }, 
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 },
   sectionTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  titleSpacing: { marginTop: 10 }, // Added space between title and card/list
+  titleSpacing: { marginTop: 10 }, 
   patientChip: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, marginRight: 10 },
   patientChipSelected: { backgroundColor: '#7DD1E0' },
   patientChipText: { color: '#fff', fontWeight: '600' },
@@ -276,7 +294,7 @@ const styles = StyleSheet.create({
   cardMedName: { fontSize: 13, fontWeight: 'bold', color: '#0b4f5c', marginTop: 5 },
   cardTime: { fontSize: 12, color: '#0b4f5c' },
   stockMainCard: { backgroundColor: '#fff', borderRadius: 25, padding: 20 },
-  stockRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  stockRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, alignItems: 'center' },
   stockNameLabel: { fontWeight: 'bold', color: '#0b4f5c' },
   stockDaysValue: { fontWeight: '600' },
   emptyCard: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 20, borderRadius: 15, width: 200 },

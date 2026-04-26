@@ -23,10 +23,10 @@ export default function HistoryScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dateRange, setDateRange]       = useState([]);
   const [medications, setMedications]   = useState([]);
-  const [loading, setLoading]           = useState(false);
+  const [loading, setLoading]            = useState(false);
   const scrollRef = useRef(null);
 
-  // ── 1. Fetch Patients on Mount ──────────────────────────────────────────────
+  // 1. Fetch Patients on Mount
   useEffect(() => {
     fetchPatients();
   }, []);
@@ -43,6 +43,11 @@ export default function HistoryScreen() {
 
       if (error) throw error;
       setPatients(data || []);
+      
+      // Auto-select first patient if available to match Home screen behavior
+      if (data && data.length > 0 && !selectedPatient) {
+        setSelectedPatient(data[0]);
+      }
     } catch (error) {
       console.error("Error fetching patients:", error.message);
     } finally {
@@ -50,7 +55,7 @@ export default function HistoryScreen() {
     }
   };
 
-  // ── 2. Build date range and auto-scroll to today ──────────────────────────
+  // 2. Build date range and auto-scroll to today
   useEffect(() => {
     const dates = [];
     const today = new Date();
@@ -71,22 +76,19 @@ export default function HistoryScreen() {
     }, 150);
   }, []);
 
-  // ── 3. Re-fetch whenever the selected date or patient changes ─────────────
+  // 3. Re-fetch whenever the selected date or patient changes
   useEffect(() => {
     fetchHistoryData();
   }, [selectedDate, selectedPatient]);
 
-  // ── Helper: Checks if the scheduled date and time is in the future ────────
   const isTimeInFuture = (timeStr, dateStr) => {
     const now = new Date();
     const [year, month, day] = dateStr.split('-');
     const [h, m] = timeStr.split(':');
-
     const medTime = new Date(year, month - 1, day, parseInt(h), parseInt(m), 0, 0);
     return medTime > now;
   };
 
-  // ── 4. Core data-fetch mapped to your provided schema ─────────────────────
   const fetchHistoryData = async () => {
     if (!selectedPatient) {
       setMedications([]);
@@ -97,7 +99,6 @@ export default function HistoryScreen() {
     try {
       const selectedStr = selectedDate.toISOString().split('T')[0];
 
-      // A. Get patient's assigned medications mapped to medication table
       const { data: pMeds, error: pMedsError } = await supabase
         .from("patient_medications")
         .select(`
@@ -117,21 +118,17 @@ export default function HistoryScreen() {
 
       const pMedIds = pMeds.map(pm => pm.id);
 
-      // B. Get all schedule times for these medications
       const { data: schedules } = await supabase
         .from("schedule")
         .select("*")
         .in("patient_medication_id", pMedIds);
 
-      // C. Get specific dates for the selected day
       const { data: specDates } = await supabase
         .from("specific_medication_dates")
         .select("*")
         .in("patient_medication_id", pMedIds)
         .eq("scheduled_date", selectedStr);
 
-      // D. Get logs from "history" table filtered to the selected day
-      // (Assuming 'created_at' or similar timestamp handles the day logged)
       const { data: logs } = await supabase
         .from("history")
         .select("*")
@@ -159,10 +156,12 @@ export default function HistoryScreen() {
 
         if (isScheduled) {
           const pmSchedules = schedules?.filter(s => s.patient_medication_id === pm.id) || [];
-
           pmSchedules.forEach(sched => {
-            // Check if there is a record in the history table for this schedule_id today
-            const isTaken = logs?.some(l => l.schedule_id === sched.id) ?? false;
+            const isTaken = logs?.some(l => 
+              (l.schedule_id === sched.id || (l.patient_medication_id === pm.id && l.scheduled_time === sched.time)) && 
+              (l.status === 'taken' || !l.status)
+            ) ?? false;
+            
             const upcoming = isTimeInFuture(sched.time, selectedStr);
 
             dailyList.push({
@@ -176,7 +175,6 @@ export default function HistoryScreen() {
         }
       });
 
-      // E. Group entries by time slot
       const grouped = dailyList.reduce((acc, item) => {
         const existing = acc.find(g => g.time === item.time);
         if (existing) {
@@ -196,7 +194,6 @@ export default function HistoryScreen() {
     }
   };
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   const formatTimeDisplay = (timeStr) => {
     if (!timeStr) return "";
     const [h, m]       = timeStr.split(":");
@@ -209,37 +206,39 @@ export default function HistoryScreen() {
   const getStatusIcon = (item) => {
     if (item.taken)    return { name: "checkmark-circle", color: "#2ecc71" };
     if (item.upcoming) return { name: "time",             color: "#f39c12" };
-    return               { name: "close-circle",          color: "#e74c3c" };
+    return             { name: "close-circle",           color: "#e74c3c" };
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       
 
-      {/* Patient Selection Bar */}
+      {/* Patient Selection Bar - Matched to Home Screen */}
       <View style={styles.patientWrapper}>
-        {loadingPatients ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {patients.map(p => (
-              <TouchableOpacity 
-                key={p.id} 
-                style={[styles.patientChip, selectedPatient?.id === p.id && styles.patientChipSelected]}
-                onPress={() => setSelectedPatient(p)}
-              >
-                <Text style={[styles.patientChipText, selectedPatient?.id === p.id && styles.patientChipTextSelected]}>
-                  {p.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
+        <Text style={styles.sectionTitle}>Patients</Text>
+        <View style={styles.patientListContainer}>
+          {loadingPatients ? (
+            <ActivityIndicator color="#7DD1E0" />
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {patients.map(p => (
+                <TouchableOpacity 
+                  key={p.id} 
+                  style={[styles.patientChip, selectedPatient?.id === p.id && styles.patientChipSelected]}
+                  onPress={() => setSelectedPatient(p)}
+                >
+                  <Text style={[styles.patientChipText, selectedPatient?.id === p.id && styles.patientChipTextSelected]}>
+                    {p.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
       </View>
 
-      {/* Horizontal date picker */}
+      {/* Horizontal Date Picker */}
       <View style={styles.dateBar}>
         <ScrollView
           ref={scrollRef}
@@ -269,12 +268,11 @@ export default function HistoryScreen() {
         </ScrollView>
       </View>
 
-      {/* Body: Conditional Rendering based on Patient Selection */}
+      {/* Main Content */}
       {!selectedPatient ? (
         <View style={styles.center}>
           <Ionicons name="people-outline" size={60} color="rgba(255,255,255,0.4)" />
           <Text style={[styles.emptyText, { marginTop: 15 }]}>Please select a patient</Text>
-          <Text style={[styles.emptyText, { fontSize: 14 }]}>to view their medication history.</Text>
         </View>
       ) : loading ? (
         <View style={styles.center}>
@@ -288,17 +286,13 @@ export default function HistoryScreen() {
         <ScrollView style={styles.content}>
           {medications.map((group, index) => (
             <View key={index} style={styles.timelineRow}>
-
-              {/* Left timeline decoration */}
               <View style={styles.leftLine}>
                 <View style={styles.dot} />
                 <View style={styles.line} />
               </View>
 
-              {/* Med card */}
               <View style={styles.medCard}>
                 <Text style={styles.timeLabel}>{formatTimeDisplay(group.time)}</Text>
-
                 <View style={styles.medItemsContainer}>
                   {group.items.map((med, medIdx) => {
                     const icon = getStatusIcon(med);
@@ -306,14 +300,13 @@ export default function HistoryScreen() {
                       <View key={medIdx} style={styles.medRow}>
                         <Ionicons name={icon.name} size={20} color={icon.color} />
                         <Text style={styles.medNameText}>
-                          {med.name} ({med.dose} Dose)
+                          {med.name} ({med.dose})
                         </Text>
                       </View>
                     );
                   })}
                 </View>
               </View>
-
             </View>
           ))}
         </ScrollView>
@@ -322,35 +315,42 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container:          { flex: 1, backgroundColor: "#0b4f5c" },
-  header:             { flexDirection: "row", alignItems: "center", padding: 20, marginTop: 10, paddingBottom: 10 },
-  headerTitle:        { color: "white", fontSize: 28, fontWeight: "bold", marginLeft: 15 },
-  
-  // Patient Bar Styles
-  patientWrapper:     { paddingHorizontal: 20, marginBottom: 20 },
-  patientChip:        { paddingHorizontal: 15, paddingVertical: 10, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 25, marginRight: 10 },
-  patientChipSelected:{ backgroundColor: "#7DD1E0" },
-  patientChipText:    { color: "#fff", fontWeight: "600" },
+const styles = StyleSheet.create({ 
+  container: { flex: 1, backgroundColor: "#0b4f5c" },
+ // Patient Bar - Home Screen Match
+  patientWrapper: { paddingHorizontal: 20, marginBottom: 20 },
+  sectionTitle: { color: "white", fontSize: 20, fontWeight: "bold", marginBottom: 12 },
+  patientListContainer: { flexDirection: 'row', alignItems: 'center', height: 45 },
+  patientChip: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    backgroundColor: "rgba(255,255,255,0.15)", 
+    borderRadius: 20, 
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)'
+  },
+  patientChipSelected: { backgroundColor: "#7DD1E0", borderColor: "#7DD1E0" },
+  patientChipText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   patientChipTextSelected: { color: "#0b4f5c", fontWeight: "bold" },
 
-  center:             { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  dateBar:            { paddingLeft: 20, marginBottom: 15, height: 100 },
-  dateCard:           { backgroundColor: "#D9D9D9", width: 60, height: 90, borderRadius: 15, justifyContent: "center", alignItems: "center", marginRight: 12 },
-  selectedCard:       { backgroundColor: "#4D595B", borderWidth: 1, borderColor: "#7DD1E0" },
-  monthText:          { fontSize: 10, fontWeight: "bold", color: "#06303A" },
-  dateNum:            { fontSize: 18, fontWeight: "bold", color: "#06303A" },
-  dateDay:            { fontSize: 11, color: "#06303A" },
-  selectedText:       { color: "#7DD1E0" },
-  content:            { flex: 1, paddingHorizontal: 20 },
-  timelineRow:        { flexDirection: "row", minHeight: 100 },
-  leftLine:           { alignItems: "center", marginRight: 15 },
-  dot:                { width: 12, height: 12, borderRadius: 6, backgroundColor: "white", marginTop: 40 },
-  line:               { width: 2, flex: 1, backgroundColor: "rgba(255,255,255,0.3)" },
-  medCard:            { flex: 1, backgroundColor: "#D9D9D9", borderRadius: 20, padding: 20, marginVertical: 10, flexDirection: "row", alignItems: "center" },
-  timeLabel:          { fontSize: 16, fontWeight: "bold", color: "#06303A", width: 80 },
-  medItemsContainer:  { flex: 1, borderLeftWidth: 1, borderLeftColor: "#BDC3C7", paddingLeft: 15 },
-  medRow:             { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  medNameText:        { fontSize: 16, color: "#06303A", marginLeft: 8 },
-  emptyText:          { color: "rgba(255,255,255,0.6)", fontSize: 16, fontWeight: "500", textAlign: "center" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
+  dateBar: { paddingLeft: 20, marginBottom: 15, height: 100 },
+  dateCard: { backgroundColor: "#D9D9D9", width: 60, height: 90, borderRadius: 15, justifyContent: "center", alignItems: "center", marginRight: 12 },
+  selectedCard: { backgroundColor: "#4D595B", borderWidth: 1, borderColor: "#7DD1E0" },
+  monthText: { fontSize: 10, fontWeight: "bold", color: "#06303A" },
+  dateNum: { fontSize: 18, fontWeight: "bold", color: "#06303A" },
+  dateDay: { fontSize: 11, color: "#06303A" },
+  selectedText: { color: "#7DD1E0" },
+  content: { flex: 1, paddingHorizontal: 20 },
+  timelineRow: { flexDirection: "row", minHeight: 100 },
+  leftLine: { alignItems: "center", marginRight: 15 },
+  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "white", marginTop: 40 },
+  line: { width: 2, flex: 1, backgroundColor: "rgba(255,255,255,0.3)" },
+  medCard: { flex: 1, backgroundColor: "#D9D9D9", borderRadius: 20, padding: 20, marginVertical: 10, flexDirection: "row", alignItems: "center" },
+  timeLabel: { fontSize: 16, fontWeight: "bold", color: "#06303A", width: 85 },
+  medItemsContainer: { flex: 1, borderLeftWidth: 1, borderLeftColor: "#BDC3C7", paddingLeft: 15 },
+  medRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  medNameText: { fontSize: 15, color: "#06303A", marginLeft: 8, fontWeight: '500' },
+  emptyText: { color: "rgba(255,255,255,0.6)", fontSize: 16, fontWeight: "500", textAlign: "center" },
 });
