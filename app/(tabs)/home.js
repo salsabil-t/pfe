@@ -19,7 +19,6 @@ import { supabase } from '../lib/supabase';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Returns today's date string in LOCAL time (YYYY-MM-DD), not UTC. */
 const getLocalDateString = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -28,13 +27,25 @@ const getLocalDateString = () => {
   return `${y}-${m}-${d}`;
 };
 
-/** True if the HH:MM time string is strictly in the future (local time). */
 const isTimeInFuture = (timeStr) => {
   if (!timeStr) return false;
   const [h, m] = timeStr.split(':');
   const medTime = new Date();
   medTime.setHours(parseInt(h, 10), parseInt(m, 10), 0, 0);
   return medTime > new Date();
+};
+
+/**
+ * Validates an Algerian phone number.
+ * Required format: 0XXXXXXXXX — starts with 0, followed by exactly 9 digits.
+ * Valid mobile prefixes after the 0: 5xx, 6xx, 7xx.
+ * Returns the number as-is (0XXXXXXXXX) on success, null if invalid.
+ */
+const normaliseAlgerianPhone = (raw) => {
+  const digits = raw.replace(/[\s\-().]/g, '');
+  // Must be exactly 10 digits, start with 0, second digit 5‑7
+  if (/^0[5-7]\d{8}$/.test(digits)) return digits;
+  return null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,10 +57,7 @@ export default function HomeScreen() {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [todaySchedule, setTodaySchedule] = useState([]);
   const [medicationStock, setMedicationStock] = useState([]);
-
-  // ─── BUG FIX: store dismissed IDs per patient { [patientId]: [pmId, ...] }
-  // so dismissed items don't reappear when switching between patients.
-  const [dismissedStockByPatient, setDismissedStockByPatient] = useState({});
+  const [dismissedStockByPatient, setDismissedStockByPatient] = useState({}); // kept for safety, no longer used for stock
 
   // Patient modal
   const [showPatientModal, setShowPatientModal] = useState(false);
@@ -73,21 +81,15 @@ export default function HomeScreen() {
   const [editSelectedDates, setEditSelectedDates] = useState([]);
   const [editMarkedDates, setEditMarkedDates] = useState({});
 
-  // Ref so async functions always see the latest selectedPatient
   const selectedPatientRef = useRef(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  // Fetch patient data whenever selectedPatient changes
   useEffect(() => {
     if (selectedPatient) {
       selectedPatientRef.current = selectedPatient;
       fetchTodaySchedule(selectedPatient.id);
       fetchMedicationStock(selectedPatient.id);
-      // ─── BUG FIX: do NOT reset dismissed IDs here — they are now stored
-      // per patient, so switching patients naturally shows the right set.
     }
   }, [selectedPatient?.id]);
 
@@ -101,9 +103,7 @@ export default function HomeScreen() {
       setUserName(user.user_metadata?.full_name ?? user.email.split('@')[0]);
 
       const { data: pts, error: ptsError } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('caregiver_id', user.id)
+        .from('patients').select('*').eq('caregiver_id', user.id)
         .order('created_at', { ascending: true });
 
       if (ptsError) { console.error('Patients fetch error:', ptsError); return; }
@@ -113,9 +113,7 @@ export default function HomeScreen() {
 
       if (list.length > 0) {
         const currentId = selectedPatientRef.current?.id;
-        const refreshed = currentId
-          ? (list.find(p => p.id === currentId) ?? list[0])
-          : list[0];
+        const refreshed = currentId ? (list.find(p => p.id === currentId) ?? list[0]) : list[0];
         setSelectedPatient(refreshed);
       } else {
         selectedPatientRef.current = null;
@@ -133,71 +131,48 @@ export default function HomeScreen() {
       const todayStr = getLocalDateString();
 
       const { data: pmeds, error: pmedsErr } = await supabase
-        .from('patient_medications')
-        .select('*, medication(id, name)')
-        .eq('patient_id', patientId);
+        .from('patient_medications').select('*, medication(id, name)').eq('patient_id', patientId);
 
       if (pmedsErr) { console.error('pmeds error:', pmedsErr); return; }
       if (!pmeds?.length) { setTodaySchedule([]); return; }
 
       const pmIds = pmeds.map(pm => pm.id);
-
-      const { data: allSlots } = await supabase
-        .from('schedule')
-        .select('*')
-        .in('patient_medication_id', pmIds);
-
+      const { data: allSlots } = await supabase.from('schedule').select('*').in('patient_medication_id', pmIds);
       const { data: todayLogs } = await supabase
-        .from('history')
-        .select('*')
-        .eq('patient_id', patientId)
-        .gte('taken_at', `${todayStr}T00:00:00`)
-        .lte('taken_at', `${todayStr}T23:59:59`);
+        .from('history').select('*').eq('patient_id', patientId)
+        .gte('taken_at', `${todayStr}T00:00:00`).lte('taken_at', `${todayStr}T23:59:59`);
 
       const schedule = [];
-
       for (const pm of pmeds) {
         let activeToday = false;
-
         if (pm.schedule_type === 'consecutive') {
           const start = new Date(pm.start_date + 'T00:00:00');
-          const curr = new Date(todayStr + 'T00:00:00');
-          const diff = Math.round((curr - start) / 86400000);
+          const curr  = new Date(todayStr + 'T00:00:00');
+          const diff  = Math.round((curr - start) / 86400000);
           if (diff >= 0 && diff < parseInt(pm.num_of_days || '0', 10)) activeToday = true;
         } else {
           const { data: spec } = await supabase
-            .from('specific_medication_dates')
-            .select('id')
-            .eq('patient_medication_id', pm.id)
-            .eq('scheduled_date', todayStr);
+            .from('specific_medication_dates').select('id')
+            .eq('patient_medication_id', pm.id).eq('scheduled_date', todayStr);
           if (spec?.length > 0) activeToday = true;
         }
-
         if (activeToday) {
           const slots = allSlots?.filter(s => s.patient_medication_id === pm.id) ?? [];
           for (const slot of slots) {
             schedule.push({
-              scheduleId: slot.id,
-              pmId: pm.id,
-              medicationId: pm.medication?.id,
-              scheduleType: pm.schedule_type,
-              numOfDays: pm.num_of_days,
-              startDate: pm.start_date,
+              scheduleId: slot.id, pmId: pm.id,
+              medicationId: pm.medication?.id, scheduleType: pm.schedule_type,
+              numOfDays: pm.num_of_days, startDate: pm.start_date,
               name: pm.medication?.name ?? 'Unknown',
-              time: slot.time,
-              dose: slot.dose,
+              time: slot.time, dose: slot.dose,
               taken: todayLogs?.some(
-                l =>
-                  l.patient_medication_id === pm.id &&
-                  l.scheduled_time === slot.time &&
-                  l.status === 'taken'
+                l => l.patient_medication_id === pm.id && l.scheduled_time === slot.time && l.status === 'taken'
               ) ?? false,
               pending: isTimeInFuture(slot.time),
             });
           }
         }
       }
-
       setTodaySchedule(schedule.sort((a, b) => a.time.localeCompare(b.time)));
     } catch (err) {
       console.error('fetchTodaySchedule error:', err);
@@ -207,61 +182,71 @@ export default function HomeScreen() {
   const fetchMedicationStock = async (patientId) => {
     try {
       const todayStr = getLocalDateString();
-
       const { data: pmeds } = await supabase
-        .from('patient_medications')
-        .select('*, medication(name)')
-        .eq('patient_id', patientId);
+        .from('patient_medications').select('*, medication(name)').eq('patient_id', patientId)
+
 
       const stockList = [];
       if (pmeds) {
         for (const pm of pmeds) {
           let remaining = 0;
           if (pm.schedule_type === 'consecutive') {
-            const start = new Date(pm.start_date + 'T00:00:00');
-            const today = new Date(todayStr + 'T00:00:00');
+            const start     = new Date(pm.start_date + 'T00:00:00');
+            const today     = new Date(todayStr + 'T00:00:00');
             const totalDays = parseInt(pm.num_of_days, 10) || 0;
-            const elapsed = Math.round((today - start) / 86400000);
-            const rem = totalDays - elapsed;
+            const elapsed   = Math.round((today - start) / 86400000);
+            const rem       = totalDays - elapsed;
             remaining = rem > 0 ? rem : 0;
           } else {
             const { count } = await supabase
               .from('specific_medication_dates')
               .select('*', { count: 'exact', head: true })
-              .eq('patient_medication_id', pm.id)
-              .gte('scheduled_date', todayStr);
+              .eq('patient_medication_id', pm.id).gte('scheduled_date', todayStr);
             remaining = count ?? 0;
           }
-          stockList.push({
-            id: pm.id,
-            name: pm.medication?.name ?? 'Unknown',
-            daysRemaining: remaining,
-          });
+          stockList.push({ id: pm.id, name: pm.medication?.name ?? 'Unknown', daysRemaining: remaining });
         }
       }
+      // Active meds (most days left) at top; 0-day meds at bottom
+      stockList.sort((a, b) => b.daysRemaining - a.daysRemaining);
       setMedicationStock(stockList);
     } catch (err) {
       console.error('fetchMedicationStock error:', err);
     }
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
-  };
+  const onRefresh = async () => { setRefreshing(true); await loadData(); setRefreshing(false); };
 
   // ─── Patient CRUD ───────────────────────────────────────────────────────────
 
   const savePatient = async () => {
+    if (!editName.trim()) {
+      Alert.alert('Missing Info', 'Please enter the patient name.');
+      return;
+    }
+
+    // ── Phone required + validation ───────────────────────────────────────────
+    if (!editPhone.trim()) {
+      Alert.alert('Missing Info', 'Please enter a phone number.');
+      return;
+    }
+    const normalisedPhone = normaliseAlgerianPhone(editPhone.trim());
+    if (!normalisedPhone) {
+      Alert.alert(
+        'Invalid Phone Number',
+        'Please enter a valid Algerian mobile number.\n\nFormat: 0XXXXXXXXX (10 digits)\nExamples:\n  0551234567\n  0661234567\n  0771234567'
+      );
+      return;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       const payload = {
         caregiver_id: user.id,
-        name: editName.trim(),
-        age: editAge ? parseInt(editAge, 10) : null,
-        disease: editDisease.trim(),
-        phone_number: editPhone.trim(),
+        name:         editName.trim(),
+        age:          editAge ? parseInt(editAge, 10) : null,
+        disease:      editDisease.trim(),
+        phone_number: normalisedPhone,
       };
 
       let error;
@@ -270,7 +255,6 @@ export default function HomeScreen() {
       } else {
         ({ error } = await supabase.from('patients').insert(payload));
       }
-
       if (error) { Alert.alert('Error', error.message); return; }
       setShowPatientModal(false);
       await loadData();
@@ -286,18 +270,9 @@ export default function HomeScreen() {
         text: 'Delete', style: 'destructive', onPress: async () => {
           const { error } = await supabase.from('patients').delete().eq('id', patient.id);
           if (error) { Alert.alert('Error', error.message); return; }
-
-          // Clean up dismissed IDs for this patient
-          setDismissedStockByPatient(prev => {
-            const next = { ...prev };
-            delete next[patient.id];
-            return next;
-          });
-
+          setDismissedStockByPatient(prev => { const next = { ...prev }; delete next[patient.id]; return next; });
           selectedPatientRef.current = null;
-          setSelectedPatient(null);
-          setTodaySchedule([]);
-          setMedicationStock([]);
+          setSelectedPatient(null); setTodaySchedule([]); setMedicationStock([]);
           await loadData();
         },
       },
@@ -313,25 +288,18 @@ export default function HomeScreen() {
     setEditMedDose(item.dose != null ? String(item.dose) : '1');
     setEditMedType(item.scheduleType ?? 'consecutive');
     setEditMedDays(item.numOfDays != null ? String(item.numOfDays) : '');
-    setEditSelectedDates([]);
-    setEditMarkedDates({});
-    setShowInlineTimePicker(false);
-    setShowInlineCalendar(false);
-
+    setEditSelectedDates([]); setEditMarkedDates({});
+    setShowInlineTimePicker(false); setShowInlineCalendar(false);
     if (item.time) {
       const [h, m] = item.time.split(':');
-      const d = new Date();
-      d.setHours(parseInt(h, 10), parseInt(m, 10), 0, 0);
+      const d = new Date(); d.setHours(parseInt(h, 10), parseInt(m, 10), 0, 0);
       setTempTimeDate(d);
     }
     setShowMedModal(true);
   };
 
   const onInlineTimeChange = (event, selectedDate) => {
-    if (Platform.OS === 'android') {
-      setShowInlineTimePicker(false);
-      if (event.type === 'dismissed') return;
-    }
+    if (Platform.OS === 'android') { setShowInlineTimePicker(false); if (event.type === 'dismissed') return; }
     if (selectedDate) {
       setTempTimeDate(selectedDate);
       const hh = selectedDate.getHours().toString().padStart(2, '0');
@@ -344,134 +312,100 @@ export default function HomeScreen() {
     const dateStr = day.dateString;
     setEditMarkedDates(prev => {
       const next = { ...prev };
-      if (next[dateStr]) {
-        delete next[dateStr];
-      } else {
-        next[dateStr] = { selected: true, selectedColor: '#0b4f5c', selectedTextColor: '#fff' };
-      }
+      if (next[dateStr]) { delete next[dateStr]; }
+      else { next[dateStr] = { selected: true, selectedColor: '#0b4f5c', selectedTextColor: '#fff' }; }
       return next;
     });
-    setEditSelectedDates(prev =>
-      prev.includes(dateStr) ? prev.filter(d => d !== dateStr) : [...prev, dateStr]
-    );
+    setEditSelectedDates(prev => prev.includes(dateStr) ? prev.filter(d => d !== dateStr) : [...prev, dateStr]);
   };
 
   const saveMedication = async () => {
     if (!editingMed) return;
     try {
       const todayStr = getLocalDateString();
-
       const { error: schedErr } = await supabase
-        .from('schedule')
-        .update({
-          time: editMedTime,
-          dose: parseFloat(editMedDose) || 1,
-        })
+        .from('schedule').update({ time: editMedTime, dose: parseFloat(editMedDose) || 1 })
         .eq('id', editingMed.scheduleId);
-
       if (schedErr) { Alert.alert('Error updating schedule', schedErr.message); return; }
 
       if (editingMed.medicationId) {
         const { error: medErr } = await supabase
-          .from('medication')
-          .update({ name: editMedName.trim() })
-          .eq('id', editingMed.medicationId);
-
+          .from('medication').update({ name: editMedName.trim() }).eq('id', editingMed.medicationId);
         if (medErr) { Alert.alert('Error updating medication', medErr.message); return; }
       }
 
       if (editingMed.pmId) {
         const pmPayload = {
-          schedule_type: editMedType,
-          start_date: todayStr,
+          schedule_type: editMedType, start_date: todayStr,
           num_of_days: editMedType === 'consecutive' ? (parseInt(editMedDays, 10) || null) : null,
         };
-
-        const { error: pmErr } = await supabase
-          .from('patient_medications')
-          .update(pmPayload)
-          .eq('id', editingMed.pmId);
-
+        const { error: pmErr } = await supabase.from('patient_medications').update(pmPayload).eq('id', editingMed.pmId);
         if (pmErr) { Alert.alert('Error updating patient medication', pmErr.message); return; }
 
         const { error: delDatesErr } = await supabase
-          .from('specific_medication_dates')
-          .delete()
-          .eq('patient_medication_id', editingMed.pmId);
-
+          .from('specific_medication_dates').delete().eq('patient_medication_id', editingMed.pmId);
         if (delDatesErr) { Alert.alert('Error clearing old dates', delDatesErr.message); return; }
 
         if (editMedType === 'specific' && editSelectedDates.length > 0) {
-          const rows = editSelectedDates.map(date => ({
-            patient_medication_id: editingMed.pmId,
-            scheduled_date: date,
-          }));
+          const rows = editSelectedDates.map(date => ({ patient_medication_id: editingMed.pmId, scheduled_date: date }));
           const { error: datesErr } = await supabase.from('specific_medication_dates').insert(rows);
           if (datesErr) { Alert.alert('Error saving dates', datesErr.message); return; }
         }
       }
-
       setShowMedModal(false);
-
       const pid = selectedPatientRef.current?.id;
-      if (pid) {
-        await fetchTodaySchedule(pid);
-        await fetchMedicationStock(pid);
-      }
+      if (pid) { await fetchTodaySchedule(pid); await fetchMedicationStock(pid); }
     } catch (err) {
       Alert.alert('Error', err.message);
     }
   };
 
-  // ─── Delete medication entirely from DB ────────────────────────────────────
-
   const deleteMedication = (item) => {
+    Alert.alert('Delete Medication', `Remove "${item.name}" completely for this patient?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            if (item.pmId) {
+              await supabase.from('specific_medication_dates').delete().eq('patient_medication_id', item.pmId);
+              await supabase.from('schedule').delete().eq('patient_medication_id', item.pmId);
+              await supabase.from('history').delete().eq('patient_medication_id', item.pmId);
+              await supabase.from('patient_medications').delete().eq('id', item.pmId);
+            }
+            const pid = selectedPatientRef.current?.id;
+            if (pid) { await fetchTodaySchedule(pid); await fetchMedicationStock(pid); }
+          } catch (err) { Alert.alert('Error', err.message); }
+        },
+      },
+    ]);
+  };
+
+  // ─── Stock dismiss: permanently deletes the finished med from DB ───────────
+  // This prevents 0-day meds from reappearing after an app reload.
+
+  const dismissStockItem = (pmId) => {
     Alert.alert(
-      'Delete Medication',
-      `Remove "${item.name}" completely for this patient?`,
+      'Remove Medication',
+      'This treatment is finished. Remove it from the list permanently?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete', style: 'destructive', onPress: async () => {
+          text: 'Remove', style: 'destructive', onPress: async () => {
             try {
-              if (item.pmId) {
-                await supabase.from('specific_medication_dates').delete().eq('patient_medication_id', item.pmId);
-                await supabase.from('schedule').delete().eq('patient_medication_id', item.pmId);
-                await supabase.from('history').delete().eq('patient_medication_id', item.pmId);
-                await supabase.from('patient_medications').delete().eq('id', item.pmId);
-              }
+              await supabase.from('specific_medication_dates').delete().eq('patient_medication_id', pmId);
+              await supabase.from('schedule').delete().eq('patient_medication_id', pmId);
+              await supabase.from('history').delete().eq('patient_medication_id', pmId);
+              await supabase.from('patient_medications').delete().eq('id', pmId);
               const pid = selectedPatientRef.current?.id;
-              if (pid) {
-                await fetchTodaySchedule(pid);
-                await fetchMedicationStock(pid);
-              }
-            } catch (err) {
-              Alert.alert('Error', err.message);
-            }
+              if (pid) { await fetchTodaySchedule(pid); await fetchMedicationStock(pid); }
+            } catch (err) { Alert.alert('Error', err.message); }
           },
         },
       ]
     );
   };
 
-  // ─── Stock dismiss (UI-only for 0-day items) ────────────────────────────────
-  // ─── BUG FIX: store dismissed IDs per patient so switching patients doesn't
-  // bring back dismissed items from another patient's visit.
-
-  const dismissStockItem = (patientId, pmId) => {
-    setDismissedStockByPatient(prev => ({
-      ...prev,
-      [patientId]: [...(prev[patientId] ?? []), pmId],
-    }));
-  };
-
-  // Compute visible stock for the currently selected patient
-  const dismissedForCurrent = selectedPatient
-    ? (dismissedStockByPatient[selectedPatient.id] ?? [])
-    : [];
-  const visibleStock = medicationStock.filter(
-    item => !dismissedForCurrent.includes(item.id)
-  );
+  const visibleStock = medicationStock; // ordering handled in fetchMedicationStock
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -533,9 +467,23 @@ export default function HomeScreen() {
                 setShowPatientModal(true);
               }}
             >
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Name:</Text><Text style={styles.infoValue}>{selectedPatient.name}</Text></View>
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Age:</Text><Text style={styles.infoValue}>{selectedPatient.age ?? 'N/A'} years old</Text></View>
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Disease:</Text><Text style={styles.infoValue}>{selectedPatient.disease || 'N/A'}</Text></View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Name:</Text>
+                <Text style={styles.infoValue}>{selectedPatient.name}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Age:</Text>
+                <Text style={styles.infoValue}>{selectedPatient.age ?? 'N/A'} years old</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Disease:</Text>
+                <Text style={styles.infoValue}>{selectedPatient.disease || 'N/A'}</Text>
+              </View>
+              {/* ── Phone row ── */}
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Phone:</Text>
+                <Text style={styles.infoValue}>{selectedPatient.phone_number || 'N/A'}</Text>
+              </View>
               <View style={styles.cardFooter}>
                 <Text style={styles.editHint}>Tap to edit</Text>
                 <TouchableOpacity onPress={() => deletePatient(selectedPatient)}>
@@ -583,11 +531,7 @@ export default function HomeScreen() {
           <View style={styles.sectionContainer}>
             <Text style={styles.sectionTitle}>Medication Stock</Text>
             <View style={[styles.stockMainCard, styles.titleSpacing]}>
-              <ScrollView
-                nestedScrollEnabled
-                showsVerticalScrollIndicator={false}
-                style={styles.stockScroll}
-              >
+              <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={styles.stockScroll}>
                 {visibleStock.map(item => (
                   <View key={item.id} style={styles.stockRow}>
                     <Text style={styles.stockNameLabel}>{item.name} :</Text>
@@ -596,11 +540,7 @@ export default function HomeScreen() {
                         {item.daysRemaining} days remaining
                       </Text>
                       {item.daysRemaining === 0 && (
-                        // ─── BUG FIX: pass both patientId and pmId
-                        <TouchableOpacity
-                          onPress={() => dismissStockItem(selectedPatient.id, item.id)}
-                          style={styles.dismissBtn}
-                        >
+                        <TouchableOpacity onPress={() => dismissStockItem(item.id)} style={styles.dismissBtn}>
                           <Ionicons name="close-circle" size={18} color="#e74c3c" />
                         </TouchableOpacity>
                       )}
@@ -609,9 +549,7 @@ export default function HomeScreen() {
                 ))}
               </ScrollView>
               {visibleStock.length > 2 && (
-                <View style={styles.scrollTrack}>
-                  <View style={styles.scrollThumb} />
-                </View>
+                <View style={styles.scrollTrack}><View style={styles.scrollThumb} /></View>
               )}
             </View>
           </View>
@@ -625,13 +563,47 @@ export default function HomeScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>{editingPatient ? 'Edit Patient' : 'Add Patient'}</Text>
+
             <Text style={styles.fieldLabel}>Name</Text>
-            <TextInput style={styles.input} placeholder="Full name" value={editName} onChangeText={setEditName} />
+            <TextInput
+              style={styles.input}
+              placeholder="Name"
+              placeholderTextColor="#bbb"
+              value={editName}
+              onChangeText={setEditName}
+            />
+
             <Text style={styles.fieldLabel}>Age</Text>
-            <TextInput style={styles.input} placeholder="Age" keyboardType="numeric" value={editAge} onChangeText={setEditAge} />
+            <TextInput
+              style={styles.input}
+              placeholder="Age"
+              placeholderTextColor="#bbb"
+              keyboardType="number-pad"
+              value={editAge}
+              onChangeText={setEditAge}
+            />
+
             <Text style={styles.fieldLabel}>Disease / Condition</Text>
-            <TextInput style={styles.input} placeholder="e.g. Diabetes" value={editDisease} onChangeText={setEditDisease} />
-            
+            <TextInput
+              style={styles.input}
+              placeholder="Disease"
+              placeholderTextColor="#bbb"
+              value={editDisease}
+              onChangeText={setEditDisease}
+            />
+
+            <Text style={styles.fieldLabel}>Phone Number</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Phone Number"
+              placeholderTextColor="#bbb"
+              keyboardType="number-pad"
+              value={editPhone}
+              onChangeText={setEditPhone}
+              maxLength={10}
+            />
+            <Text style={styles.phoneHint}>Format: 0XXXXXXXXX (10 digits, e.g. 0551234567)</Text>
+
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowPatientModal(false)}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -656,7 +628,13 @@ export default function HomeScreen() {
               <Text style={styles.modalTitle}>Edit Medication</Text>
 
               <Text style={styles.fieldLabel}>Medication Name</Text>
-              <TextInput style={styles.input} value={editMedName} onChangeText={setEditMedName} placeholder="e.g. Paracetamol" />
+              <TextInput
+                style={styles.input}
+                value={editMedName}
+                onChangeText={setEditMedName}
+                placeholder="e.g. Paracetamol"
+                placeholderTextColor="#bbb"
+              />
 
               <Text style={styles.fieldLabel}>Pills per take</Text>
               <TextInput
@@ -665,16 +643,13 @@ export default function HomeScreen() {
                 value={editMedDose}
                 onChangeText={setEditMedDose}
                 placeholder="e.g. 1"
+                placeholderTextColor="#bbb"
               />
 
-              {/* Time picker */}
               <Text style={styles.fieldLabel}>Time</Text>
               <TouchableOpacity
                 style={[styles.pickerField, showInlineTimePicker && styles.pickerFieldActive]}
-                onPress={() => {
-                  setShowInlineTimePicker(v => !v);
-                  setShowInlineCalendar(false);
-                }}
+                onPress={() => { setShowInlineTimePicker(v => !v); setShowInlineCalendar(false); }}
               >
                 <Text style={styles.pickerText}>{editMedTime}</Text>
                 <Ionicons name="time-outline" size={20} color="#0b4f5c" />
@@ -683,12 +658,9 @@ export default function HomeScreen() {
               {showInlineTimePicker && (
                 <View style={styles.inlinePickerContainer}>
                   <DateTimePicker
-                    value={tempTimeDate}
-                    mode="time"
+                    value={tempTimeDate} mode="time"
                     display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    is24Hour
-                    onChange={onInlineTimeChange}
-                    textColor="#0b4f5c"
+                    is24Hour onChange={onInlineTimeChange} textColor="#0b4f5c"
                     style={Platform.OS === 'ios' ? { width: '100%' } : {}}
                   />
                   {Platform.OS === 'ios' && (
@@ -699,18 +671,13 @@ export default function HomeScreen() {
                 </View>
               )}
 
-              {/* Schedule type */}
               <Text style={styles.fieldLabel}>Schedule Type</Text>
               <View style={styles.typeToggle}>
                 {['consecutive', 'specific'].map(type => (
                   <TouchableOpacity
                     key={type}
                     style={[styles.typeBtn, editMedType === type && styles.typeBtnActive]}
-                    onPress={() => {
-                      setEditMedType(type);
-                      setShowInlineCalendar(false);
-                      setShowInlineTimePicker(false);
-                    }}
+                    onPress={() => { setEditMedType(type); setShowInlineCalendar(false); setShowInlineTimePicker(false); }}
                   >
                     <Text style={[styles.typeBtnText, editMedType === type && styles.typeBtnTextActive]}>
                       {type === 'consecutive' ? 'Consecutive' : 'Specific Days'}
@@ -723,11 +690,9 @@ export default function HomeScreen() {
                 <>
                   <Text style={styles.fieldLabel}>Duration (Days)</Text>
                   <TextInput
-                    style={styles.input}
-                    keyboardType="numeric"
-                    value={editMedDays}
-                    onChangeText={setEditMedDays}
-                    placeholder="e.g. 7"
+                    style={styles.input} keyboardType="numeric"
+                    value={editMedDays} onChangeText={setEditMedDays}
+                    placeholder="e.g. 7" placeholderTextColor="#bbb"
                   />
                 </>
               ) : (
@@ -735,34 +700,22 @@ export default function HomeScreen() {
                   <Text style={styles.fieldLabel}>Add Treatment Days</Text>
                   <TouchableOpacity
                     style={[styles.pickerField, showInlineCalendar && styles.pickerFieldActive]}
-                    onPress={() => {
-                      setShowInlineCalendar(v => !v);
-                      setShowInlineTimePicker(false);
-                    }}
+                    onPress={() => { setShowInlineCalendar(v => !v); setShowInlineTimePicker(false); }}
                   >
                     <Text style={styles.pickerText}>
-                      {editSelectedDates.length === 0
-                        ? 'Tap to select days'
-                        : `${editSelectedDates.length} day(s) selected`}
+                      {editSelectedDates.length === 0 ? 'Tap to select days' : `${editSelectedDates.length} day(s) selected`}
                     </Text>
                     <Ionicons name="calendar-outline" size={20} color="#0b4f5c" />
                   </TouchableOpacity>
-
                   {showInlineCalendar && (
                     <View style={styles.inlineCalendarContainer}>
                       <Calendar
-                        onDayPress={toggleCalendarDate}
-                        markedDates={editMarkedDates}
-                        markingType="simple"
+                        onDayPress={toggleCalendarDate} markedDates={editMarkedDates} markingType="simple"
                         theme={{
-                          todayBackgroundColor: '#e0f7fa',
-                          todayTextColor: '#0b4f5c',
-                          selectedDayBackgroundColor: '#0b4f5c',
-                          selectedDayTextColor: '#fff',
-                          arrowColor: '#0b4f5c',
-                          monthTextColor: '#0b4f5c',
-                          dayTextColor: '#333',
-                          textDayFontWeight: '500',
+                          todayBackgroundColor: '#e0f7fa', todayTextColor: '#0b4f5c',
+                          selectedDayBackgroundColor: '#0b4f5c', selectedDayTextColor: '#fff',
+                          arrowColor: '#0b4f5c', monthTextColor: '#0b4f5c',
+                          dayTextColor: '#333', textDayFontWeight: '500',
                         }}
                       />
                       <TouchableOpacity style={styles.confirmPickerBtn} onPress={() => setShowInlineCalendar(false)}>
@@ -841,6 +794,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#0b4f5c', marginBottom: 15, textAlign: 'center' },
   fieldLabel: { fontSize: 12, fontWeight: 'bold', color: '#0b4f5c', marginBottom: 5, marginLeft: 5 },
   input: { backgroundColor: '#f0f0f0', borderRadius: 12, padding: 12, marginBottom: 15, color: '#0b4f5c' },
+  phoneHint: { fontSize: 11, color: '#aaa', marginTop: -10, marginBottom: 14, marginLeft: 6 },
 
   pickerField: { backgroundColor: '#f0f0f0', borderRadius: 12, padding: 12, marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   pickerFieldActive: { backgroundColor: '#dff0f3', borderWidth: 1.5, borderColor: '#7DD1E0' },
