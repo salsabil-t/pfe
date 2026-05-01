@@ -1,29 +1,84 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import * as Notifications from 'expo-notifications';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   FlatList,
   Linking,
   RefreshControl,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { supabase } from '../lib/supabase';
-
-function NotificationScreen({ navigation }) {
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+ export default function NotificationScreen({ navigation }) {
   const [notification, setNotification] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('today');
   const router = useRouter();
+  const [patients, setPatients] = useState([]); // Liste de tous les patients
+  const [selectedId, setSelectedId] = useState(null); // ID du patient choisi
+  const [selectedName, setSelectedName] = useState(""); // Nom du patient choisi
+    const initData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Charger les patients (pour voir Nasim !)
+      const { data: patientsData } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('caregiver_id', user.id)
+        .order('created_at', { ascending: true });
+      
+      if (patientsData) {
+        setPatients(patientsData);
+      }
+      
+      await fetchNotification();
+      await checkMissedMedications();
+    } catch (error) {
+      console.error("Init error:", error);
+    }
+  };
+
+  // ✅ 2. RAFRAÎCHISSEMENT AUTOMATIQUE QUAND ON ARRIVE SUR LA AGE
+  useFocusEffect(
+    useCallback(() => {
+      initData();
+     
+      
+      const checkInterval = setInterval(checkMissedMedications, 30 * 1000);
+      
+      const notificationSubscription = supabase
+        .channel('notification-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notification' }, () => {
+          fetchNotification();
+        })
+        .subscribe();
+
+      return () => {
+        clearInterval(checkInterval);
+        notificationSubscription.unsubscribe();
+      };
+    }, [selectedId]) // Se relance si on change de patient
+  );
+ 
   const checkMissedMedications = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user || !selectedId) return;
 
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0];
@@ -31,35 +86,49 @@ function NotificationScreen({ navigation }) {
 
     // Récupère tous les médicaments programmés aujourd'hui
     const { data: allTakes } = await supabase
-      .from('medication takes')
-      .select('*')
-      .eq('user_id', user.id);
+      .from('schedule')
+      .select('*,patient_medications (id, schedule_type, start_date, num_of_days, medication(name))')
+      .eq('patient_medications.patient_id', selectedId);
+      if (!selectedId) 
+      return;
    
     if (!allTakes || allTakes.length === 0) return;
 
     // Pour chaque médicament programmé
     for (const take of allTakes) {
       const scheduledTime = take.time; 
-      // ✅ AJOUTE CETTE VÉRIFICATION AU DÉBUT :
-    const { data: medData } = await supabase  
-      .from('add med table') // Le nom de votre table principale
-      .select('name')
-      .eq('id', take.medication_id)
-      .single();
+      const medName =
+       take.patient_medications?.medication?.name || "Medication";
+      const scheduleType = take.patient_medications?.schedule_type;
+      const startDate = take.patient_medications?.start_date;
+      const numOfDays = take.patient_medications?.num_of_days; 
+        
+      let isProgrammedToday = false;
+      if (scheduleType === 'consecutive') {
+        // Pour les médicaments consécutifs
+        const start = new Date(startDate);
+        const end = new Date(start);
+        end.setDate(end.getDate() + numOfDays - 1);
+        const today = new Date(currentDate);
+      // Vérifie si aujourd'hui est entre start_date et start_date + num_of_days
+        isProgrammedToday = today >= start && today <= end;
+        
+      } else if (scheduleType === 'specific') {
+        // Pour les dates spécifiques
+        const { data: scheduledToday } = await supabase
+          .from('specific_medication_dates')
+          .select('*')
+          .eq('patient_medication_id', take.patient_medication_id)
+          .eq('scheduled_date', currentDate);
 
-     const medName = medData?.name || "Unknown Medication";
+        isProgrammedToday = scheduledToday && scheduledToday.length > 0;
+      }
 
-  // Vérifie si ce médicament était programmé AUJOURD'HUI
-       const { data: scheduledToday } = await supabase
-      .from('medication_dates')
-      .select('*')
-      .eq('medication_id', take.medication_id)
-      .eq('scheduled_date', currentDate);
-  
-     // Si PAS programmé aujourd'hui, skip !
-     if (!scheduledToday || scheduledToday.length === 0) {
-     continue; // ← PASSE AU SUIVANT
-     }
+      // ✅ Si PAS programmé aujourd'hui, passe au suivant
+      if (!isProgrammedToday) {
+        continue;
+      }
+
       
       // Calcule la différence en minutes
       const [schedHour, schedMin] = scheduledTime.split(':').map(Number);
@@ -70,15 +139,15 @@ function NotificationScreen({ navigation }) {
       
       const differenceMinutes = nowMinutes - scheduledMinutes;
       
-      // Si dépassé de plus de 10 minutes
-      if (differenceMinutes > 10) {
-        // Vérifie si déjà pris dans medication_logs
+      
+      if (differenceMinutes > 15) {
+
         const { data: logs } = await supabase
-          .from('medication_logs')
+          .from('history')
           .select('*')
-          .eq('user_id', user.id)
-          .eq('medication_id', take.medication_id)
-          .eq('scheduled_time', scheduledTime)
+          .eq('patient_id', selectedId)
+          .eq('patient_medication_id', take.patient_medication_id)
+          .eq('schedule_id', take.id)
           .gte('taken_at', `${currentDate}T00:00:00`)
           .lte('taken_at', `${currentDate}T23:59:59`);
 
@@ -87,54 +156,114 @@ function NotificationScreen({ navigation }) {
           const { data: existingNotif } = await supabase
             .from('notification')
             .select('*')
-            .eq('user_id', user.id)
-            .eq('medication_id', take.medication_id)
+            .eq('caregiver_id', user.id)
+            .eq('patient_medication_id', take.patient_medication_id)
             .eq('scheduled_time', scheduledTime)
             .gte('created_at',` ${currentDate}T00:00:00`);
-
+            if (existingNotif && existingNotif.length > 0) {
+           console.log("Notif exist");
+           continue;
+        }
           // Si notification pas encore créée
           if (!existingNotif || existingNotif.length === 0) {
-             const { data: profileData } = await supabase
-              .from('profiles')
-              .select('phone_number')
-              .eq('id', user.id)
+             const { data: patientData } = await supabase
+              .from('patients')
+              .select('name')
+              .eq('id', selectedId)
               .single();
-              const userPhone = profileData ?.phone_number;
-            // Crée notification "missed"
+            const patientName = patientData ?.name || "Patient";
+            
+            const { data:insertNotif,error: insertError } =
             await supabase.from('notification').insert({
-              user_id: user.id,
-              medication_id: take.medication_id,
+              caregiver_id: user.id,
+              patient_medication_id: take.patient_medication_id,
+              patient_id: selectedId,
               scheduled_time: scheduledTime,
               type: 'missed',
-              message: `The medication "${medName}" scheduled at ${scheduledTime.slice(0, 5)} was not taken`,
+              message: `"${patientName}" missed "${medName}" scheduled at ${scheduledTime.slice(0, 5)}`,
               show_call_button: true,
-              phone_number: userPhone,
               is_read: false,
               created_at: now.toISOString(),
-            });
-    
-            // Marque aussi dans medication_logs comme "missed"
-            await supabase.from('medication_logs').insert({
-              user_id: user.id,
-              medication_id: take.medication_id,
-              scheduled_time: scheduledTime,
-              status: 'missed',
-              taken_at: null,
-            });
+            })
+            .select();
+             if (insertError) {
+               console.error("Insert error", insertError);
+               continue;
+              
+             } else {
+                console.log("notification created");
+                
+             }
+                   
+            try {          
+              await Notifications.scheduleNotificationAsync({
+               content: {
+               title:`⚠️ ${patientName} - Medication Missed!`,
+               body: `${medName} scheduled at ${scheduledTime.slice(0, 5)} was not taken`,
+               data: { patientId: selectedId,  patientName: patientName,medicationName: medName,type: 'missed',}, 
+               sound: 'alarm_sounds',
+               data: {
+                  patientId: selectedId,
+                  patientName:patientName,          
+                  medicationName: medName,
+                  type: 'medication_missed',
+              },
+               android: {
+                channelId: 'medication-reminders-v3',
+              },
+               
+               },
+               
+               trigger: null, 
 
-            console.log(`Notification created : medication not taken at ${scheduledTime}`);
-          }
-        }
+             });
+                console.log("notification sent");
+            } catch (notifError) {
+                console.error ("push notification error:", notifError);
+                
+              // ✅ Marque dans history comme "missed"
+              await supabase.from('history').insert({
+                patient_id: selectedId,
+                patient_medication_id: take.patient_medication_id,
+                schedule_id: take.id,
+                scheduled_time: scheduledTime,
+                status: 'missed',
+                taken_at: null,
+              });
+
+              console.log(" History entry created");
+               }
+         } 
+       }
       }
-    }
-  } catch (error) {
-    console.error("Erreur checkMissedMedications:", error);
+     }
+    } catch (error) {
+    console.error(" checkMissedMedications error:", error);
   }
 };
+           
+    
+  
 
   useEffect(() => {
+     const init = async () => {
+    
+    // 1. Charger les patients d'abord
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('caregiver_id', user.id);
+      
+      if (data && data.length > 0) {
+        setPatients(data);
+      }
+    }
   fetchNotification();
   checkMissedMedications(); 
+  };
+  init();
   const checkInterval = setInterval(checkMissedMedications, 30 * 1000);
 
   // Canal 1 : Écoute les changements dans la table 'notification' (votre code actuel)
@@ -153,6 +282,7 @@ function NotificationScreen({ navigation }) {
       }
     )
     .subscribe();
+    
 
   
   return () => {
@@ -161,24 +291,35 @@ function NotificationScreen({ navigation }) {
     
   };
 }, []);
+   useEffect(() => {
+    if (selectedId) {
+      console.log("Patient sélectionné :", selectedName);
+      fetchNotification();      // Recharge les notifications du patient choisi
+      checkMissedMedications(); // Vérifie les retards pour ce patient précis
+    }
+  }, [selectedId]); // Se déclenche dès que selectedId change (clic sur la Chip)
 
  const fetchNotification = async () => {
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || !selectedId) {
+      setNotification([]);
+      return;
+    }
 
+    // On retire la jointure patient_medications qui fait planter
     const { data, error } = await supabase
       .from('notification')
-      .select('*')
-      .eq('user_id', user.id)
+      .select('*') // On prend tout simplement
+      .eq('caregiver_id', user.id)
+      .eq('patient_id', selectedId) // Filtre par patient
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
     setNotification(data || []);
   } catch (error) {
-    console.error('Erreur:', error);
+    console.error('Erreur fetch:', error);
   }
 };
 
@@ -229,23 +370,35 @@ function NotificationScreen({ navigation }) {
     );
   };
 
-  const makeCall = (phoneNumber) => {
-    if (!phoneNumber) {
-      Alert.alert('Erreur', '📞 Phone number not found');
+  const makeCall = async (patientId) => {
+  try {
+    // Récupère le numéro du PATIENT (pas du caregiver !)
+    const { data: patient, error } = await supabase
+      .from('patients')
+      .select('phone_number')
+      .eq('id', patientId)
+      .single();
+
+    if (error) throw error;
+
+    if (!patient?.phone_number) {
+      Alert.alert('Error', '📞 Phone number not found');
       return;
     }
 
-    const url = `tel:${phoneNumber}`;
-    Linking.canOpenURL(url)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(url);
-        } else {
-          Alert.alert('Erreur', 'Unable to open the phone dialer');
-        }
-      })
-      .catch((err) => console.error('Call error:', err));
-  };
+    const url = `tel:${patient.phone_number}`;
+    const supported = await Linking.canOpenURL(url);
+    
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert('Error', 'Unable to open the phone dialer');
+    }
+  } catch (err) {
+    console.error('Call error:', err);
+    Alert.alert('Error', 'Failed to make call');
+  }
+};
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
@@ -293,8 +446,9 @@ function NotificationScreen({ navigation }) {
         {item.show_call_button && (
           <TouchableOpacity
             style={styles.callButton}
-            onPress={() => makeCall(item.phone_number)}
+            onPress={() => makeCall(item.patient_id)}
           >
+            <Icon name="call" size={16} color="#FFFFFF" style={{ marginRight: 6}} />
             <Text style={styles.callButtonText}>call</Text>
           </TouchableOpacity>
         )}
@@ -308,72 +462,108 @@ function NotificationScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B5563" />
-
+  
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.goBack()}
-        >
-          <Ionicons name="arrow-back-outline" size={26} color="#fff" />
-        </TouchableOpacity>
-
+        
         <View style={styles.placeholder} />
       </View>
-
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'today' && styles.activeTab]}
-          onPress={() => setActiveTab('today')}
-        >
-          <Text style={[styles.tabText, activeTab === 'today' && styles.activeTabText]}>
-            Today
-          </Text>
-          {todayNotification.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{todayNotification.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'old' && styles.activeTab]}
-          onPress={() => setActiveTab('old')}
-        >
-          <Text style={[styles.tabText, activeTab === 'old' && styles.activeTabText]}>
-            Old
-          </Text>
-          {oldNotification.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{oldNotification.length}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+      {/* Section Patients */}
+   <View style={styles.sectionContainer}>
+   <Text style={styles.sectionTitle}>Select Patient</Text>
+   <ScrollView 
+    horizontal 
+    showsHorizontalScrollIndicator={false} 
+    style={styles.titleSpacing}
+   >
+    {patients.map(p => (
+      <TouchableOpacity 
+        key={p.id} 
+        style={[
+          styles.patientChip, 
+          selectedId === p.id && styles.patientChipSelected
+        ]} 
+        onPress={() => {
+          setSelectedId(p.id);
+          setSelectedName(p.name);
+        }}
+      >
+        <Text style={[
+          styles.patientChipText, 
+          selectedId === p.id && styles.patientChipTextSelected
+        ]}>
+          {p.name}
+        </Text>
+      </TouchableOpacity>
+      ))}
+    </ScrollView>
+   </View>
+      {!selectedId ? (
+      // SI AUCUN PATIENT N'EST SÉLECTIONNÉ
+      <View style={styles.emptyyContainer}>
+        <Icon name="person-outline" size={80} color="rgba(255, 255, 255, 0.3)" />
+        <Text style={styles.emptyyText}>Please select a patient to view notifications</Text>
       </View>
+    ) : (
+      // SI UN PATIENT EST SÉLECTIONNÉ (On affiche tout le reste)
+      <>
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'today' && styles.activeTab]}
+            onPress={() => setActiveTab('today')}
+          >
+            <Text style={[styles.tabText, activeTab === 'today' && styles.activeTabText]}>Today</Text>
+            {todayNotification.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{todayNotification.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
-      {/* Liste des notifications */}
-      <FlatList
-        data={displayedNotification}
-        renderItem={renderNotification}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={<RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor="#FFFFFF"
-          colors={['#14B8A6']} />}
-        ListEmptyComponent={<View style={styles.emptyState}>
-          <Icon name="notifications-off-outline" size={80} color="rgba(255, 255, 255, 0.3)" />
-          <Text style={styles.emptyText}>
-            {activeTab === 'today' ? 'No notification today' : 'No old notification'}
-          </Text>
-        </View>} 
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'old' && styles.activeTab]}
+            onPress={() => setActiveTab('old')}
+          >
+            <Text style={[styles.tabText, activeTab === 'old' && styles.activeTabText]}>Old</Text>
+            {oldNotification.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{oldNotification.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Liste des notifications */}
+        <FlatList
+          data={displayedNotification}
+          renderItem={renderNotification}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#FFFFFF"
+              colors={['#14B8A6']}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Icon name="notifications-off-outline" size={80} color="rgba(255, 255, 255, 0.3)" />
+              <Text style={styles.emptyText}>
+                {activeTab === 'today' ? 'No notification today' : 'No old notification'}
+              </Text>
+            </View>
+          }
         />
-        
-    </View>
-    
-  );
+      </>
+    )}
+    {/* --- FIN DE LA CONDITION --- */}
+  </View>
+);
+
+      
 }
 
 const styles = StyleSheet.create({
@@ -390,12 +580,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     backgroundColor: '#0b4f5c',
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
@@ -494,6 +679,35 @@ const styles = StyleSheet.create({
     color: '#374151',
     lineHeight: 20,
   },
+  sectionContainer: { 
+    paddingHorizontal: 20, 
+    marginBottom: 15,
+  },
+  sectionTitle: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: 'bold' 
+  },
+  titleSpacing: { 
+    marginTop: 10 
+  },
+  patientChip: { 
+    backgroundColor: 'rgba(255,255,255,0.2)', 
+    borderRadius: 20, 
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    marginRight: 10,
+  },
+  patientChipSelected: { 
+    backgroundColor: '#7DD1E0' 
+  },
+  patientChipText: { 
+    color: '#fff', 
+    fontWeight: '600'
+  },
+  patientChipTextSelected: { 
+    color: '#0b4f5c' 
+  },
   callButton: {
     backgroundColor: '#06333f',
     paddingHorizontal: 25,
@@ -501,6 +715,8 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     marginLeft: 8,
     minWidth: 80,
+    flexDirection:'row',
+    alignItems: 'center'
   },
   callButtonText: {
     color: '#FFFFFF',
@@ -530,6 +746,22 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlign: 'center',
   },
+   emptyyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    marginBottom: 100, // Pour compenser l'espace du header
+  },
+   emptyyText: {
+    color: '#fff',
+    fontSize: 18,
+    textAlign: 'center',
+    marginTop: 20,
+    opacity: 0.8,
+    fontWeight: '500',
+    lineHeight: 26,
+  },
   bottomNav: {
     position: 'absolute',
     bottom: 0,
@@ -556,4 +788,3 @@ const styles = StyleSheet.create({
   },
 });
 
-export default NotificationScreen;
