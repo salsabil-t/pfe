@@ -17,6 +17,28 @@ import {
 import { Calendar } from 'react-native-calendars';
 import { supabase } from '../lib/supabase';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns today's date string in LOCAL time (YYYY-MM-DD), not UTC. */
+const getLocalDateString = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+/** True if the HH:MM time string is strictly in the future (local time). */
+const isTimeInFuture = (timeStr) => {
+  if (!timeStr) return false;
+  const [h, m] = timeStr.split(':');
+  const medTime = new Date();
+  medTime.setHours(parseInt(h, 10), parseInt(m, 10), 0, 0);
+  return medTime > new Date();
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('Care Giver');
@@ -24,7 +46,10 @@ export default function HomeScreen() {
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [todaySchedule, setTodaySchedule] = useState([]);
   const [medicationStock, setMedicationStock] = useState([]);
-  const [dismissedStockIds, setDismissedStockIds] = useState([]);
+
+  // ─── BUG FIX: store dismissed IDs per patient { [patientId]: [pmId, ...] }
+  // so dismissed items don't reappear when switching between patients.
+  const [dismissedStockByPatient, setDismissedStockByPatient] = useState({});
 
   // Patient modal
   const [showPatientModal, setShowPatientModal] = useState(false);
@@ -61,11 +86,12 @@ export default function HomeScreen() {
       selectedPatientRef.current = selectedPatient;
       fetchTodaySchedule(selectedPatient.id);
       fetchMedicationStock(selectedPatient.id);
-      setDismissedStockIds([]);
+      // ─── BUG FIX: do NOT reset dismissed IDs here — they are now stored
+      // per patient, so switching patients naturally shows the right set.
     }
   }, [selectedPatient?.id]);
 
-  // ─── Data Loading ─────────────────────────────────────────────────────────────
+  // ─── Data Loading ───────────────────────────────────────────────────────────
 
   const loadData = async () => {
     try {
@@ -87,12 +113,12 @@ export default function HomeScreen() {
 
       if (list.length > 0) {
         const currentId = selectedPatientRef.current?.id;
-        // Refresh the selected patient object from DB so fields stay in sync
         const refreshed = currentId
           ? (list.find(p => p.id === currentId) ?? list[0])
           : list[0];
         setSelectedPatient(refreshed);
       } else {
+        selectedPatientRef.current = null;
         setSelectedPatient(null);
         setTodaySchedule([]);
         setMedicationStock([]);
@@ -104,7 +130,7 @@ export default function HomeScreen() {
 
   const fetchTodaySchedule = async (patientId) => {
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getLocalDateString();
 
       const { data: pmeds, error: pmedsErr } = await supabase
         .from('patient_medications')
@@ -125,8 +151,8 @@ export default function HomeScreen() {
         .from('history')
         .select('*')
         .eq('patient_id', patientId)
-        .gte('taken_at', `${todayStr}T00:00:00.000Z`)
-        .lte('taken_at', `${todayStr}T23:59:59.999Z`);
+        .gte('taken_at', `${todayStr}T00:00:00`)
+        .lte('taken_at', `${todayStr}T23:59:59`);
 
       const schedule = [];
 
@@ -136,8 +162,8 @@ export default function HomeScreen() {
         if (pm.schedule_type === 'consecutive') {
           const start = new Date(pm.start_date + 'T00:00:00');
           const curr = new Date(todayStr + 'T00:00:00');
-          const diff = Math.floor((curr - start) / 86400000);
-          if (diff >= 0 && diff < parseInt(pm.num_of_days || '0')) activeToday = true;
+          const diff = Math.round((curr - start) / 86400000);
+          if (diff >= 0 && diff < parseInt(pm.num_of_days || '0', 10)) activeToday = true;
         } else {
           const { data: spec } = await supabase
             .from('specific_medication_dates')
@@ -161,9 +187,10 @@ export default function HomeScreen() {
               time: slot.time,
               dose: slot.dose,
               taken: todayLogs?.some(
-                l => l.patient_medication_id === pm.id &&
-                     l.scheduled_time === slot.time &&
-                     l.status === 'taken'
+                l =>
+                  l.patient_medication_id === pm.id &&
+                  l.scheduled_time === slot.time &&
+                  l.status === 'taken'
               ) ?? false,
               pending: isTimeInFuture(slot.time),
             });
@@ -179,7 +206,7 @@ export default function HomeScreen() {
 
   const fetchMedicationStock = async (patientId) => {
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getLocalDateString();
 
       const { data: pmeds } = await supabase
         .from('patient_medications')
@@ -191,11 +218,12 @@ export default function HomeScreen() {
         for (const pm of pmeds) {
           let remaining = 0;
           if (pm.schedule_type === 'consecutive') {
-            const end = new Date(pm.start_date + 'T00:00:00');
-            end.setDate(end.getDate() + (parseInt(pm.num_of_days) || 0));
+            const start = new Date(pm.start_date + 'T00:00:00');
             const today = new Date(todayStr + 'T00:00:00');
-            const diff = Math.ceil((end - today) / 86400000);
-            remaining = diff > 0 ? diff : 0;
+            const totalDays = parseInt(pm.num_of_days, 10) || 0;
+            const elapsed = Math.round((today - start) / 86400000);
+            const rem = totalDays - elapsed;
+            remaining = rem > 0 ? rem : 0;
           } else {
             const { count } = await supabase
               .from('specific_medication_dates')
@@ -217,21 +245,13 @@ export default function HomeScreen() {
     }
   };
 
-  const isTimeInFuture = (timeStr) => {
-    if (!timeStr) return false;
-    const [h, m] = timeStr.split(':');
-    const medTime = new Date();
-    medTime.setHours(parseInt(h), parseInt(m), 0, 0);
-    return medTime > new Date();
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
   };
 
-  // ─── Patient CRUD ─────────────────────────────────────────────────────────────
+  // ─── Patient CRUD ───────────────────────────────────────────────────────────
 
   const savePatient = async () => {
     try {
@@ -239,7 +259,7 @@ export default function HomeScreen() {
       const payload = {
         caregiver_id: user.id,
         name: editName.trim(),
-        age: editAge ? parseInt(editAge) : null,
+        age: editAge ? parseInt(editAge, 10) : null,
         disease: editDisease.trim(),
         phone_number: editPhone.trim(),
       };
@@ -266,6 +286,14 @@ export default function HomeScreen() {
         text: 'Delete', style: 'destructive', onPress: async () => {
           const { error } = await supabase.from('patients').delete().eq('id', patient.id);
           if (error) { Alert.alert('Error', error.message); return; }
+
+          // Clean up dismissed IDs for this patient
+          setDismissedStockByPatient(prev => {
+            const next = { ...prev };
+            delete next[patient.id];
+            return next;
+          });
+
           selectedPatientRef.current = null;
           setSelectedPatient(null);
           setTodaySchedule([]);
@@ -276,7 +304,7 @@ export default function HomeScreen() {
     ]);
   };
 
-  // ─── Medication Edit ──────────────────────────────────────────────────────────
+  // ─── Medication Edit ────────────────────────────────────────────────────────
 
   const openEditMedModal = (item) => {
     setEditingMed(item);
@@ -293,7 +321,7 @@ export default function HomeScreen() {
     if (item.time) {
       const [h, m] = item.time.split(':');
       const d = new Date();
-      d.setHours(parseInt(h), parseInt(m), 0, 0);
+      d.setHours(parseInt(h, 10), parseInt(m, 10), 0, 0);
       setTempTimeDate(d);
     }
     setShowMedModal(true);
@@ -331,7 +359,8 @@ export default function HomeScreen() {
   const saveMedication = async () => {
     if (!editingMed) return;
     try {
-      // 1. Update schedule row (time + dose)
+      const todayStr = getLocalDateString();
+
       const { error: schedErr } = await supabase
         .from('schedule')
         .update({
@@ -342,7 +371,6 @@ export default function HomeScreen() {
 
       if (schedErr) { Alert.alert('Error updating schedule', schedErr.message); return; }
 
-      // 2. Update medication name — table is 'medication' (singular) per your schema
       if (editingMed.medicationId) {
         const { error: medErr } = await supabase
           .from('medication')
@@ -352,32 +380,39 @@ export default function HomeScreen() {
         if (medErr) { Alert.alert('Error updating medication', medErr.message); return; }
       }
 
-      // 3. Update patient_medications (schedule_type + num_of_days)
       if (editingMed.pmId) {
+        const pmPayload = {
+          schedule_type: editMedType,
+          start_date: todayStr,
+          num_of_days: editMedType === 'consecutive' ? (parseInt(editMedDays, 10) || null) : null,
+        };
+
         const { error: pmErr } = await supabase
           .from('patient_medications')
-          .update({
-            schedule_type: editMedType,
-            num_of_days: editMedType === 'consecutive' ? (parseInt(editMedDays) || null) : null,
-          })
+          .update(pmPayload)
           .eq('id', editingMed.pmId);
 
         if (pmErr) { Alert.alert('Error updating patient medication', pmErr.message); return; }
-      }
 
-      // 4. Insert newly selected specific dates (if any)
-      if (editMedType === 'specific' && editSelectedDates.length > 0 && editingMed.pmId) {
-        const rows = editSelectedDates.map(date => ({
-          patient_medication_id: editingMed.pmId,
-          scheduled_date: date,
-        }));
-        const { error: datesErr } = await supabase.from('specific_medication_dates').insert(rows);
-        if (datesErr) { Alert.alert('Error saving dates', datesErr.message); return; }
+        const { error: delDatesErr } = await supabase
+          .from('specific_medication_dates')
+          .delete()
+          .eq('patient_medication_id', editingMed.pmId);
+
+        if (delDatesErr) { Alert.alert('Error clearing old dates', delDatesErr.message); return; }
+
+        if (editMedType === 'specific' && editSelectedDates.length > 0) {
+          const rows = editSelectedDates.map(date => ({
+            patient_medication_id: editingMed.pmId,
+            scheduled_date: date,
+          }));
+          const { error: datesErr } = await supabase.from('specific_medication_dates').insert(rows);
+          if (datesErr) { Alert.alert('Error saving dates', datesErr.message); return; }
+        }
       }
 
       setShowMedModal(false);
 
-      // Re-fetch data for current patient
       const pid = selectedPatientRef.current?.id;
       if (pid) {
         await fetchTodaySchedule(pid);
@@ -388,7 +423,7 @@ export default function HomeScreen() {
     }
   };
 
-  // ─── Delete medication entirely from DB ──────────────────────────────────────
+  // ─── Delete medication entirely from DB ────────────────────────────────────
 
   const deleteMedication = (item) => {
     Alert.alert(
@@ -399,7 +434,6 @@ export default function HomeScreen() {
         {
           text: 'Delete', style: 'destructive', onPress: async () => {
             try {
-              // Delete child rows first to avoid FK constraint errors
               if (item.pmId) {
                 await supabase.from('specific_medication_dates').delete().eq('patient_medication_id', item.pmId);
                 await supabase.from('schedule').delete().eq('patient_medication_id', item.pmId);
@@ -420,12 +454,26 @@ export default function HomeScreen() {
     );
   };
 
-  // ─── Stock dismiss (UI only, 0-days items) ────────────────────────────────────
+  // ─── Stock dismiss (UI-only for 0-day items) ────────────────────────────────
+  // ─── BUG FIX: store dismissed IDs per patient so switching patients doesn't
+  // bring back dismissed items from another patient's visit.
 
-  const dismissStockItem = (id) => setDismissedStockIds(prev => [...prev, id]);
-  const visibleStock = medicationStock.filter(item => !dismissedStockIds.includes(item.id));
+  const dismissStockItem = (patientId, pmId) => {
+    setDismissedStockByPatient(prev => ({
+      ...prev,
+      [patientId]: [...(prev[patientId] ?? []), pmId],
+    }));
+  };
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+  // Compute visible stock for the currently selected patient
+  const dismissedForCurrent = selectedPatient
+    ? (dismissedStockByPatient[selectedPatient.id] ?? [])
+    : [];
+  const visibleStock = medicationStock.filter(
+    item => !dismissedForCurrent.includes(item.id)
+  );
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container}>
@@ -488,7 +536,6 @@ export default function HomeScreen() {
               <View style={styles.infoRow}><Text style={styles.infoLabel}>Name:</Text><Text style={styles.infoValue}>{selectedPatient.name}</Text></View>
               <View style={styles.infoRow}><Text style={styles.infoLabel}>Age:</Text><Text style={styles.infoValue}>{selectedPatient.age ?? 'N/A'} years old</Text></View>
               <View style={styles.infoRow}><Text style={styles.infoLabel}>Disease:</Text><Text style={styles.infoValue}>{selectedPatient.disease || 'N/A'}</Text></View>
-              <View style={styles.infoRow}><Text style={styles.infoLabel}>Phone:</Text><Text style={styles.infoValue}>{selectedPatient.phone_number || 'N/A'}</Text></View>
               <View style={styles.cardFooter}>
                 <Text style={styles.editHint}>Tap to edit</Text>
                 <TouchableOpacity onPress={() => deletePatient(selectedPatient)}>
@@ -549,7 +596,11 @@ export default function HomeScreen() {
                         {item.daysRemaining} days remaining
                       </Text>
                       {item.daysRemaining === 0 && (
-                        <TouchableOpacity onPress={() => dismissStockItem(item.id)} style={styles.dismissBtn}>
+                        // ─── BUG FIX: pass both patientId and pmId
+                        <TouchableOpacity
+                          onPress={() => dismissStockItem(selectedPatient.id, item.id)}
+                          style={styles.dismissBtn}
+                        >
                           <Ionicons name="close-circle" size={18} color="#e74c3c" />
                         </TouchableOpacity>
                       )}
@@ -580,8 +631,7 @@ export default function HomeScreen() {
             <TextInput style={styles.input} placeholder="Age" keyboardType="numeric" value={editAge} onChangeText={setEditAge} />
             <Text style={styles.fieldLabel}>Disease / Condition</Text>
             <TextInput style={styles.input} placeholder="e.g. Diabetes" value={editDisease} onChangeText={setEditDisease} />
-            <Text style={styles.fieldLabel}>Phone</Text>
-            <TextInput style={styles.input} placeholder="Phone number" keyboardType="phone-pad" value={editPhone} onChangeText={setEditPhone} />
+            
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowPatientModal(false)}>
                 <Text style={styles.cancelBtnText}>Cancel</Text>
