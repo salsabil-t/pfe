@@ -29,12 +29,12 @@ export default function HistoryScreen() {
   const [loadingPatients, setLoadingPatients] = useState(true);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [dateRange, setDateRange] = useState([]);
-  const [medications, setMedications] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [dateRange, setDateRange]       = useState([]);
+  const [medications, setMedications]   = useState([]);
+  const [loading, setLoading]            = useState(false);
   const scrollRef = useRef(null);
 
-  // 1. Fetch patients on mount
+  // 1. Fetch Patients on Mount
   useEffect(() => {
     fetchPatients();
   }, []);
@@ -51,7 +51,8 @@ export default function HistoryScreen() {
 
       if (error) throw error;
       setPatients(data || []);
-
+      
+      // Auto-select first patient if available to match Home screen behavior
       if (data && data.length > 0 && !selectedPatient) {
         setSelectedPatient(data[0]);
       }
@@ -83,18 +84,17 @@ export default function HistoryScreen() {
     }, 150);
   }, []);
 
-  // 3. Re-fetch whenever selected date or patient changes
+  // 3. Re-fetch whenever the selected date or patient changes
   useEffect(() => {
     fetchHistoryData();
   }, [selectedDate, selectedPatient]);
 
-  // ─── BUG FIX: compare against local time, not UTC ──────────────────────────
   const isTimeInFuture = (timeStr, dateStr) => {
     if (!timeStr) return false;
     const now = new Date();
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [h, m] = timeStr.split(':').map(Number);
-    const medTime = new Date(year, month - 1, day, h, m, 0, 0);
+    const [year, month, day] = dateStr.split('-');
+    const [h, m] = timeStr.split(':');
+    const medTime = new Date(year, month - 1, day, parseInt(h), parseInt(m), 0, 0);
     return medTime > now;
   };
 
@@ -106,8 +106,7 @@ export default function HistoryScreen() {
 
     setLoading(true);
     try {
-      // ─── BUG FIX: use local date string, not UTC toISOString ───────────────
-      const selectedStr = getLocalDateString(selectedDate);
+      const selectedStr = selectedDate.toISOString().split('T')[0];
 
       const { data: pMeds, error: pMedsError } = await supabase
         .from("patient_medications")
@@ -139,13 +138,12 @@ export default function HistoryScreen() {
         .in("patient_medication_id", pMedIds)
         .eq("scheduled_date", selectedStr);
 
-      // ─── BUG FIX: query by taken_at (not created_at) — matches DB schema ───
       const { data: logs } = await supabase
         .from("history")
         .select("*")
         .eq("patient_id", selectedPatient.id)
-        .gte("taken_at", `${selectedStr}T00:00:00`)
-        .lte("taken_at", `${selectedStr}T23:59:59`);
+        .gte("created_at", `${selectedStr}T00:00:00.000Z`)
+        .lte("created_at", `${selectedStr}T23:59:59.999Z`);
 
       let dailyList = [];
 
@@ -153,12 +151,11 @@ export default function HistoryScreen() {
         let isScheduled = false;
 
         if (pm.schedule_type === "consecutive") {
-          const start = new Date(pm.start_date + "T00:00:00");
-          const current = new Date(selectedStr + "T00:00:00");
-          // BUG FIX: Math.round for DST safety (same as Home)
-          const diffDays = Math.round((current - start) / 86400000);
+          const start    = new Date(pm.start_date + "T00:00:00");
+          const current  = new Date(selectedStr + "T00:00:00");
+          const diffDays = Math.floor((current - start) / (1000 * 60 * 60 * 24));
           const duration = pm.num_of_days;
-
+          
           if (diffDays >= 0 && (duration === null || diffDays < duration)) {
             isScheduled = true;
           }
@@ -169,20 +166,18 @@ export default function HistoryScreen() {
         if (isScheduled) {
           const pmSchedules = schedules?.filter(s => s.patient_medication_id === pm.id) || [];
           pmSchedules.forEach(sched => {
-            // ─── BUG FIX: removed `|| !l.status` — only 'taken' counts as taken
-            const isTaken = logs?.some(l =>
-              l.patient_medication_id === pm.id &&
-              l.scheduled_time === sched.time &&
-              l.status === 'taken'
+            const isTaken = logs?.some(l => 
+              (l.schedule_id === sched.id || (l.patient_medication_id === pm.id && l.scheduled_time === sched.time)) && 
+              (l.status === 'taken' || !l.status)
             ) ?? false;
-
+            
             const upcoming = isTimeInFuture(sched.time, selectedStr);
 
             dailyList.push({
-              name: pm.medication?.name || "Unknown Med",
-              time: sched.time,
-              dose: sched.dose,
-              taken: isTaken,
+              name:     pm.medication?.name || "Unknown Med",
+              time:     sched.time,
+              dose:     sched.dose,
+              taken:    isTaken,
               upcoming: upcoming,
             });
           });
@@ -220,12 +215,15 @@ export default function HistoryScreen() {
   const getStatusIcon = (item) => {
     if (item.taken)    return { name: "checkmark-circle", color: "#2ecc71" };
     if (item.upcoming) return { name: "time",             color: "#f39c12" };
-    return               { name: "close-circle",         color: "#e74c3c" };
+    return             { name: "close-circle",           color: "#e74c3c" };
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Patient Selection Bar */}
+      {/* Header */}
+      
+
+      {/* Patient Selection Bar - Matched to Home Screen */}
       <View style={styles.patientWrapper}>
         <Text style={styles.sectionTitle}>Patients</Text>
         <View style={styles.patientListContainer}>
@@ -234,8 +232,8 @@ export default function HistoryScreen() {
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {patients.map(p => (
-                <TouchableOpacity
-                  key={p.id}
+                <TouchableOpacity 
+                  key={p.id} 
                   style={[styles.patientChip, selectedPatient?.id === p.id && styles.patientChipSelected]}
                   onPress={() => setSelectedPatient(p)}
                 >
@@ -326,27 +324,26 @@ export default function HistoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create({ 
   container: { flex: 1, backgroundColor: "#0b4f5c" },
-
+ // Patient Bar - Home Screen Match
   patientWrapper: { paddingHorizontal: 20, marginBottom: 20 },
   sectionTitle: { color: "white", fontSize: 20, fontWeight: "bold", marginBottom: 12 },
   patientListContainer: { flexDirection: 'row', alignItems: 'center', height: 45 },
-  patientChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 20,
+  patientChip: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    backgroundColor: "rgba(255,255,255,0.15)", 
+    borderRadius: 20, 
     marginRight: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.05)'
   },
   patientChipSelected: { backgroundColor: "#7DD1E0", borderColor: "#7DD1E0" },
   patientChipText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   patientChipTextSelected: { color: "#0b4f5c", fontWeight: "bold" },
 
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-
   dateBar: { paddingLeft: 20, marginBottom: 15, height: 100 },
   dateCard: { backgroundColor: "#D9D9D9", width: 60, height: 90, borderRadius: 15, justifyContent: "center", alignItems: "center", marginRight: 12 },
   selectedCard: { backgroundColor: "#4D595B", borderWidth: 1, borderColor: "#7DD1E0" },
@@ -354,7 +351,6 @@ const styles = StyleSheet.create({
   dateNum: { fontSize: 18, fontWeight: "bold", color: "#06303A" },
   dateDay: { fontSize: 11, color: "#06303A" },
   selectedText: { color: "#7DD1E0" },
-
   content: { flex: 1, paddingHorizontal: 20 },
   timelineRow: { flexDirection: "row", minHeight: 100 },
   leftLine: { alignItems: "center", marginRight: 15 },
