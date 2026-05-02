@@ -15,6 +15,14 @@ import { supabase } from '../lib/supabase';
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = 72;
 
+// ─── Helper: local date string (YYYY-MM-DD) ───────────────────────────────────
+const getLocalDateString = (date = new Date()) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export default function HistoryScreen() {
   const [patients, setPatients] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -82,6 +90,7 @@ export default function HistoryScreen() {
   }, [selectedDate, selectedPatient]);
 
   const isTimeInFuture = (timeStr, dateStr) => {
+    if (!timeStr) return false;
     const now = new Date();
     const [year, month, day] = dateStr.split('-');
     const [h, m] = timeStr.split(':');
@@ -196,9 +205,9 @@ export default function HistoryScreen() {
 
   const formatTimeDisplay = (timeStr) => {
     if (!timeStr) return "";
-    const [h, m]       = timeStr.split(":");
-    const hours        = parseInt(h);
-    const ampm         = hours >= 12 ? "PM" : "AM";
+    const [h, m] = timeStr.split(":");
+    const hours = parseInt(h);
+    const ampm = hours >= 12 ? "PM" : "AM";
     const displayHours = hours % 12 || 12;
     return `${displayHours}:${m} ${ampm}`;
   };
@@ -249,9 +258,9 @@ export default function HistoryScreen() {
         >
           {dateRange.map((date, i) => {
             const isSelected = date.toDateString() === selectedDate.toDateString();
-            const month      = date.toLocaleDateString("en-US", { month: "short" });
-            const dayNum     = date.getDate();
-            const dayName    = date.toLocaleDateString("en-US", { weekday: "short" });
+            const month   = date.toLocaleDateString("en-US", { month: "short" });
+            const dayNum  = date.getDate();
+            const dayName = date.toLocaleDateString("en-US", { weekday: "short" });
 
             return (
               <TouchableOpacity
