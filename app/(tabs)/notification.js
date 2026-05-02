@@ -200,18 +200,9 @@ Notifications.setNotificationHandler({
                content: {
                title:`⚠️ ${patientName} - Medication Missed!`,
                body: `${medName} scheduled at ${scheduledTime.slice(0, 5)} was not taken`,
-               data: { patientId: selectedId,  patientName: patientName,medicationName: medName,type: 'missed',}, 
+               data: { patientId: selectedId,  patientName: patientName,medicationName: medName,type: 'medication-missed',}, 
                sound: 'alarm_sounds',
-               data: {
-                  patientId: selectedId,
-                  patientName:patientName,          
-                  medicationName: medName,
-                  type: 'medication_missed',
-              },
-               android: {
-                channelId: 'medication-reminders-v3',
-              },
-               
+      
                },
                
                trigger: null, 

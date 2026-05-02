@@ -52,7 +52,7 @@
     {
       "icon": "./assets/images/android-icon-monochrome.png",
       "color": "#0b4f5c",
-      "sounds": ["./assets/sounds/alarm_sound.wav"], // ✅ Ajoute le son ici
+      "sounds": ["./assets/sounds/alarm_sounds.wav"], // ✅ Ajoute le son ici
       "mode": "production"
     }
       ]
