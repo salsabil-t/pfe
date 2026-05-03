@@ -13,7 +13,7 @@ async function registerNotificationChannels() {
       vibrationPattern: [0, 1000, 500, 1000, 500, 1000], // ✅ Vibration longue
       lightColor: '#14B8A6',
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-      sound: 'alarm_sounds',
+      sound: 'default',
       bypassDnd: true,
     });
     console.log('✅ Android notification channels created');
