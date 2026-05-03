@@ -18,47 +18,67 @@ export default function SignUpScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
   
- const handleSignup = async () => {
+const handleSignup = async () => {
+  // Validation
   if (!email || !password || !confirmPassword) {
-    alert("Please enter fields");
+    alert("Please fill all fields");
     return;
   }
-if (password !== confirmPassword) {
+
+  if (password !== confirmPassword) {
     alert("Passwords do not match");
     return;
   }
-  let formattedPhone = phone;
-  if (phone.startsWith("0")) {
-    formattedPhone = "+213" + phone.substring(1);
+
+  if (!phone || phone.trim() === "") {
+    alert("Please enter your phone number");
+    return;
+  }
+
+  // Formater le numéro
+  let formattedPhone = phone.trim();
+  if (formattedPhone.startsWith("0")) {
+    formattedPhone = "+213" + formattedPhone.substring(1);
   }
 
   try {
-    const { data, error } = await supabase.auth.signUp({
-      email: email,
-      password: password,
-     
+    // ÉTAPE 1 : Créer le compte
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password: password.trim(),
     });
 
-    if (error) {
-      alert(error.message);
+    if (authError) {
+      alert(authError.message);
       return;
-    } 
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .upsert({
-        id: data.user.id,
-        email: email,
-        phone_number: formattedPhone,
-      });
+    }
+
+    console.log(" User created:", authData.user.id);
+    console.log("📞Phone to save:", formattedPhone);
+
+    // ÉTAPE 2 : Créer le profil DIRECTEMENT avec le service_role (bypass RLS)
+    // On utilise une fonction SQL pour contourner les RLS
+    const { data: profileData, error: profileError } = await supabase.rpc(
+      'create_profile_with_phone',
+      {
+        user_id: authData.user.id,
+        user_email: email.trim(),
+        user_phone: formattedPhone
+      }
+    );
 
     if (profileError) {
-      console.log("PROFILE ERROR:", profileError);
+      console.error("Profile error:", profileError);
+      alert("Account created but phone not saved. Error: " + profileError.message);
+    } else {
+      console.log(" Profile created:", profileData);
     }
-    {
-      alert("Account created! You can now log in.");
-      router.push("/(tabs)/home"); 
-    }
+
+    alert("Account created! You can now log in.");
+    router.push("/(auth)/login");
+    
   } catch (err) {
+    console.error("Error:", err);
     alert("Something went wrong: " + err.message);
   }
 };
