@@ -1,36 +1,58 @@
 import * as Notifications from 'expo-notifications';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
+
+// ✅ Fonction pour créer les channels
+async function registerNotificationChannels() {
+  if (Platform.OS === 'android') {
+    // ✅ CHANNEL 1 : Pour les ALARMES de médicaments (medication time)
+    await Notifications.setNotificationChannelAsync('medication-reminders-v3', {
+      name: 'medication-reminders-v3',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 1000, 500, 1000, 500, 1000], // ✅ Vibration longue
+      lightColor: '#14B8A6',
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      sound: 'default',
+      bypassDnd: true,
+    });
+    console.log('✅ Android notification channels created');
+  }
+}
 
 export default function RootLayout() {
   const router = useRouter();
 
   useEffect(() => {
+    // ✅ Crée les channels au démarrage
+    registerNotificationChannels();
+
     // ✅ Écoute les clics sur les notifications
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('Notification cliquée !', response);
-      
-      // On récupère les données cachées dans la notification
-      const data :any = response.notification.request.content.data;
+      console.log('🔔 Notification cliquée !', response);
 
-      // ✅ Redirige vers la page Confirmation avec l'ID en paramètre
-      router.push({
-        pathname: '/(tabs)/confirmation',
-        params: { medId: data.medicationId } 
-      });
+      const data: any = response.notification.request.content.data;
+
+      // ✅ Redirige selon le type de notification
+      if (data?.type === 'medication_reminder') {
+        // Alarme de médicament → Va à la page Confirmation
+        router.push('/(tabs)/confirmation');
+      } else if (data?.type === 'medication_missed') {
+        // Alert "Missed" → Va à la page Notification
+        router.push('/(tabs)/notification');
+      } else {
+        // Par défaut → Page Notification
+        router.push('/(tabs)/notification');
+      }
     });
 
     return () => subscription.remove();
   }, []);
 
-  // ⚠️ AJOUT DU RETURN ICI POUR FIXER L'ÉCRAN BLANC
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {/* Par défaut, on affiche l'authentification (Login/Signup) */}
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      
-      {/* Une fois connecté, on affiche les onglets */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
-}
+  }

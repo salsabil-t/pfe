@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from "react";
 import {
@@ -93,7 +94,66 @@ export default function AddMedicationScreen() {
       setTempDate(selectedTime);
     }
   };
+  const scheduleMedicationNotifications = async (patientName, medName, pmId) => {
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== 'granted') {
+    Alert.alert("Permission Required");
+    return;
+  }
 
+  for (const take of takes) {
+    const [hours, minutes] = take.time.split(':').map(Number);
+
+    const iterations = scheduleType === "consecutive" ? days : selectedDates.length;
+
+    for (let i = 0; i < iterations; i++) {
+
+      let triggerDate = new Date();
+
+      if (scheduleType === "consecutive") {
+        triggerDate.setDate(triggerDate.getDate() + i);
+      } else {
+        const d = new Date(selectedDates[i]);
+        triggerDate.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+      }
+
+      triggerDate.setHours(hours, minutes, 0, 0);
+
+      // 🔥 TEST (important)
+      if (triggerDate <= new Date()) continue;
+
+      // ✅ NOTIFICATION PRINCIPALE
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `⏰ Medication Time -${patientName}`,
+          body: ` 💊${take.time} ${patientName} take your ${medName} - ${take.dose} pill(s),!`,
+          sound: 'default',
+          data: { type: 'medication_reminder', pmId ,patientName, dose: take.dose, time: take.time},
+        },
+        trigger: {
+          type: 'date',
+          date: triggerDate,
+        },
+      });
+
+      // ✅ RAPPEL (10 min après)
+      const reminderDate = new Date(triggerDate.getTime() + 10 * 60000);
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `🚨Medication Missed-${patientName}`,
+          body: `💊${patientName} missed ${medName} scheduled at ${take.time}- ${take.dose} pill(s),! `,
+          sound: 'default',
+          data: { type: 'medication_missed' },
+        },
+        trigger: {
+          type: 'date',
+          date: reminderDate,
+        },
+      });
+    }
+  }
+};
   const handleAddMedication = async () => {
     if (!selectedPatient || !name.trim()) return Alert.alert("Error", "Missing patient or name");
     
@@ -129,6 +189,7 @@ export default function AddMedicationScreen() {
       }
 
       Alert.alert("Success", "Medication added!");
+      await scheduleMedicationNotifications(selectedPatient.name, normName, pm.id);
       resetForm();
     } catch (err) { Alert.alert("Error", err.message); }
   };
