@@ -56,12 +56,13 @@ export default function AddMedicationScreen() {
 
   const fetchPatients = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) return;
 
+      // caregiver_id column is unchanged — query is the same as before
       const { data, error } = await supabase
         .from('patients')
-        .select('*')
+        .select('id, name, age, disease, phone_number') // user_id no longer exists
         .eq('caregiver_id', user.id)
         .order('created_at', { ascending: true });
 
@@ -207,14 +208,14 @@ export default function AddMedicationScreen() {
       }
 
       // 2. Insert prescription
-      //    ✅ start_date uses local date string, not UTC
+      //    patient_id references patients.id, which is the patient's auth user id
       const { data: pm, error: pmErr } = await supabase
         .from("prescription")
         .insert({
-          patient_id:    selectedPatient.id,
+          patient_id:    selectedPatient.id,   // patients.id = auth.users.id (updated schema)
           medication_id: medId,
           schedule_type: scheduleType,
-          start_date:    getLocalDateString(),       // ✅ fixed: was new Date().toISOString().split("T")[0]
+          start_date:    getLocalDateString(),  // local date string, not UTC
           num_of_days:   scheduleType === "consecutive" ? days : null,
         })
         .select("id")
@@ -247,11 +248,14 @@ export default function AddMedicationScreen() {
         if (datesErr) throw datesErr;
       }
 
-      Alert.alert("Success", `Medication "${normName}" added for ${selectedPatient.name}!`);
+      // 5. Schedule notifications only after all DB writes succeed
       await scheduleMedicationNotifications(selectedPatient.name, normName, pm.id);
+
+      Alert.alert("Success", `Medication "${normName}" added for ${selectedPatient.name}!`);
       resetForm();
 
     } catch (err) {
+      console.error('[handleAddMedication]', err);
       Alert.alert("Error", err.message);
     }
   };
@@ -448,9 +452,9 @@ const styles = StyleSheet.create({
   inputWrapper:  { marginBottom: 20 },
   input:         { backgroundColor: "#f0f0f0", borderRadius: 25, padding: 15, fontSize: 16, color: '#0b4f5c' },
 
-  patientChip:         { padding: 10, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 20, marginRight: 8 },
-  patientChipSelected: { backgroundColor: "#7DD1E0" },
-  patientChipText:     { color: "#fff" },
+  patientChip:             { padding: 10, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 20, marginRight: 8 },
+  patientChipSelected:     { backgroundColor: "#7DD1E0" },
+  patientChipText:         { color: "#fff" },
   patientChipTextSelected: { color: "#0b4f5c", fontWeight: "bold" },
 
   card:       { backgroundColor: "#f0f0f0", borderRadius: 25, padding: 15, marginBottom: 15 },
@@ -497,11 +501,11 @@ const styles = StyleSheet.create({
   submitBtn:  { backgroundColor: "#06333f", padding: 18, borderRadius: 20, alignItems: "center", marginTop: 20 },
   submitText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
 
-  modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
-  pickerContainer:{ backgroundColor: '#fff', padding: 20, borderRadius: 25 },
-  pickerTitle:    { color: '#0b4f5c', fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
-  pickerInner:    { backgroundColor: '#eeeeee', borderRadius: 10, padding: 10 },
-  calendarBox:    { backgroundColor: '#fff', borderRadius: 20, padding: 15 },
-  doneBtn:        { backgroundColor: '#0a5f6a', padding: 15, borderRadius: 15, alignItems: 'center', marginTop: 15 },
-  doneText:       { color: '#fff', fontWeight: 'bold' },
+  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  pickerContainer: { backgroundColor: '#fff', padding: 20, borderRadius: 25 },
+  pickerTitle:     { color: '#0b4f5c', fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  pickerInner:     { backgroundColor: '#eeeeee', borderRadius: 10, padding: 10 },
+  calendarBox:     { backgroundColor: '#fff', borderRadius: 20, padding: 15 },
+  doneBtn:         { backgroundColor: '#0a5f6a', padding: 15, borderRadius: 15, alignItems: 'center', marginTop: 15 },
+  doneText:        { color: '#fff', fontWeight: 'bold' },
 });

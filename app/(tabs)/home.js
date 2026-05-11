@@ -1,8 +1,8 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const getLocalDateString = () => {
   const now = new Date();
@@ -30,61 +30,58 @@ const getLocalDateString = () => {
 };
 
 const getStatusIcon = (taken, pending) => {
-  if (taken) return { name: 'checkmark-circle', color: '#27ae60' };
-  if (pending) return { name: 'time', color: '#f39c12' };
-  return { name: 'alert-circle', color: '#e74c3c' };
+  if (taken)   return { name: 'checkmark-circle', color: '#27ae60' };
+  if (pending) return { name: 'time',             color: '#f39c12' };
+  return               { name: 'alert-circle',    color: '#e74c3c' };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
-  const [role, setRole] = useState(null); // 'caregiver' | 'patient'
-  const [userName, setUserName] = useState('');
+  const [role, setRole]           = useState(null); // 'caregiver' | 'patient'
+  const [userName, setUserName]   = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const router = useRouter();
 
   // ── Caregiver state ──
-  const [patients, setPatients] = useState([]);
+  const [patients, setPatients]             = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
-  const selectedPatientRef = useRef(null);
-  const [todaySchedule, setTodaySchedule] = useState([]);
+  const selectedPatientRef                  = useRef(null);
+  const [todaySchedule, setTodaySchedule]   = useState([]);
   const [medicationStock, setMedicationStock] = useState([]);
   const [dismissedStockIds, setDismissedStockIds] = useState([]);
 
   // ── Patient state ──
   const [patientSchedule, setPatientSchedule] = useState([]);
-  const [patientStock, setPatientStock] = useState([]);
+  const [patientStock, setPatientStock]         = useState([]);
   const [patientDismissedIds, setPatientDismissedIds] = useState([]);
-  const [patientId, setPatientId] = useState(null);
+  const [patientId, setPatientId]               = useState(null);
 
   // ── Edit patient modal ──
   const [showPatientModal, setShowPatientModal] = useState(false);
-  const [editingPatient, setEditingPatient] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [editAge, setEditAge] = useState('');
+  const [editingPatient, setEditingPatient]     = useState(null);
+  const [editName, setEditName]     = useState('');
+  const [editAge, setEditAge]       = useState('');
   const [editDisease, setEditDisease] = useState('');
-  const [editPhone, setEditPhone] = useState('');
+  const [editPhone, setEditPhone]   = useState('');
 
   // ── Edit medication modal ──
-  const [showMedModal, setShowMedModal] = useState(false);
-  const [editingMed, setEditingMed] = useState(null);
-  const [editMedName, setEditMedName] = useState('');
-  const [editMedTime, setEditMedTime] = useState('09:00');
-  const [editMedDose, setEditMedDose] = useState('1');
+  const [showMedModal, setShowMedModal]         = useState(false);
+  const [editingMed, setEditingMed]             = useState(null);
+  const [editMedName, setEditMedName]           = useState('');
+  const [editMedTime, setEditMedTime]           = useState('09:00');
+  const [editMedDose, setEditMedDose]           = useState('1');
   const [showInlineTimePicker, setShowInlineTimePicker] = useState(false);
-  const [tempTimeDate, setTempTimeDate] = useState(new Date());
+  const [tempTimeDate, setTempTimeDate]         = useState(new Date());
 
   // ── Init ──
-  useEffect(() => {
-    init();
-  }, []);
+  useEffect(() => { init(); }, []);
 
-  // Keep ref in sync with state
-  useEffect(() => {
-    selectedPatientRef.current = selectedPatient;
-  }, [selectedPatient]);
+  // Keep ref in sync
+  useEffect(() => { selectedPatientRef.current = selectedPatient; }, [selectedPatient]);
 
-  // Refresh data when screen comes back into focus
+  // Refresh on screen focus
   useFocusEffect(
     useCallback(() => {
       if (role === 'caregiver' && selectedPatient) {
@@ -97,7 +94,7 @@ export default function HomeScreen() {
     }, [role, selectedPatient?.id, patientId])
   );
 
-  // Refresh caregiver schedule whenever selected patient changes
+  // Refresh caregiver data when selected patient changes
   useEffect(() => {
     if (selectedPatient) {
       fetchTodaySchedule(selectedPatient.id);
@@ -110,15 +107,8 @@ export default function HomeScreen() {
   // ────────────────────────────────────────────────────────────────────────
   const init = async () => {
     try {
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError) {
-        console.error('[init] auth error:', authError.message);
-        return;
-      }
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) { console.error('[init] auth error:', authError.message); return; }
       if (!user) return;
 
       setUserName(user.user_metadata?.full_name ?? user.email.split('@')[0]);
@@ -128,10 +118,10 @@ export default function HomeScreen() {
         AsyncStorage.getItem('dismissedStockIds'),
         AsyncStorage.getItem('patientDismissedStockIds'),
       ]);
-      if (savedCg) setDismissedStockIds(JSON.parse(savedCg));
+      if (savedCg)  setDismissedStockIds(JSON.parse(savedCg));
       if (savedPat) setPatientDismissedIds(JSON.parse(savedPat));
 
-      // Is this user a caregiver?
+      // ── Is this user a caregiver? ──
       const { data: caregiver, error: cgError } = await supabase
         .from('care_giver')
         .select('id')
@@ -146,11 +136,12 @@ export default function HomeScreen() {
         return;
       }
 
-      // Is this user a patient?
+      // ── Is this user a patient? ──
+      // ✅ FIXED: patients.id is now the auth user id directly (user_id column removed)
       const { data: patient, error: patError } = await supabase
         .from('patients')
         .select('id, name')
-        .eq('user_id', user.id)
+        .eq('id', user.id)
         .maybeSingle();
 
       if (patError) console.error('[init] patients query error:', patError.message);
@@ -159,7 +150,7 @@ export default function HomeScreen() {
         setRole('patient');
         setPatientId(patient.id);
         setUserName(patient.name);
-        // Pass the ID directly — don't wait for setPatientId to settle
+        // Pass ID directly — don't wait for setPatientId to settle
         await fetchPatientSchedule(patient.id);
         await fetchPatientStock(patient.id);
       }
@@ -177,20 +168,17 @@ export default function HomeScreen() {
     try {
       const { data: pts, error } = await supabase
         .from('patients')
-        .select('*')
+        .select('id, name, age, disease, phone_number, created_at') // user_id removed
         .eq('caregiver_id', userId)
         .order('created_at', { ascending: true });
 
-      if (error) {
-        console.error('[loadCaregiverData] error:', error.message);
-        return;
-      }
+      if (error) { console.error('[loadCaregiverData] error:', error.message); return; }
 
       const list = pts ?? [];
       setPatients(list);
 
       if (list.length > 0) {
-        const prev = selectedPatientRef.current;
+        const prev       = selectedPatientRef.current;
         const stillExists = prev ? list.find((p) => p.id === prev.id) : null;
         setSelectedPatient(stillExists ?? list[0]);
       } else {
@@ -204,28 +192,20 @@ export default function HomeScreen() {
   };
 
   // ────────────────────────────────────────────────────────────────────────
-  // SHARED — build a schedule list from prescriptions for a given patient
-  // Used by both caregiver (fetchTodaySchedule) and patient (fetchPatientSchedule)
+  // SHARED — build schedule list for a given patient
   // ────────────────────────────────────────────────────────────────────────
   const buildScheduleForPatient = async (patId) => {
     const todayStr = getLocalDateString();
-    const now = new Date();
+    const now      = new Date();
 
     const { data: prescriptions, error: rxError } = await supabase
       .from('prescription')
       .select('*, medication(id, name)')
       .eq('patient_id', patId);
 
-    if (rxError) {
-      console.error('[buildScheduleForPatient] prescriptions error:', rxError.message);
-      return [];
-    }
-    if (!prescriptions?.length) {
-      console.log('[buildScheduleForPatient] no prescriptions found for patient', patId);
-      return [];
-    }
+    if (rxError) { console.error('[buildScheduleForPatient] prescriptions error:', rxError.message); return []; }
+    if (!prescriptions?.length) return [];
 
-    // Fetch today's history in one go
     const { data: todayLogs, error: histError } = await supabase
       .from('history')
       .select('prescription_id, scheduled_time, status')
@@ -240,15 +220,14 @@ export default function HomeScreen() {
     const schedule = [];
 
     for (const pm of prescriptions) {
-      // ── Is this prescription active today? ──
       let activeToday = false;
 
       if (pm.schedule_type === 'consecutive') {
         if (pm.start_date && pm.num_of_days) {
-          const start = new Date(`${pm.start_date}T00:00:00`);
-          const today = new Date(`${todayStr}T00:00:00`);
+          const start    = new Date(`${pm.start_date}T00:00:00`);
+          const today    = new Date(`${todayStr}T00:00:00`);
           const diffDays = Math.round((today - start) / 86_400_000);
-          activeToday = diffDays >= 0 && diffDays < parseInt(pm.num_of_days, 10);
+          activeToday    = diffDays >= 0 && diffDays < parseInt(pm.num_of_days, 10);
         }
       } else if (pm.schedule_type === 'specific') {
         const { data: spec, error: specError } = await supabase
@@ -263,7 +242,6 @@ export default function HomeScreen() {
 
       if (!activeToday) continue;
 
-      // ── Fetch intake time slots ──
       const { data: slots, error: slotsError } = await supabase
         .from('intake_time')
         .select('*')
@@ -273,24 +251,24 @@ export default function HomeScreen() {
 
       for (const slot of slots ?? []) {
         const [h, min] = slot.time.split(':').map(Number);
-        const slotDate = new Date();
+        const slotDate  = new Date();
         slotDate.setHours(h, min, 0, 0);
 
         const taken =
           todayLogs?.some(
             (l) =>
               l.prescription_id === pm.id &&
-              l.scheduled_time === slot.time &&
-              l.status === 'taken'
+              l.scheduled_time  === slot.time &&
+              l.status          === 'taken'
           ) ?? false;
 
         schedule.push({
-          scheduleId: slot.id,
-          pmId: pm.id,
+          scheduleId:   slot.id,
+          pmId:         pm.id,
           medicationId: pm.medication?.id,
-          name: pm.medication?.name ?? 'Unknown',
-          time: slot.time,
-          dose: slot.dose,
+          name:         pm.medication?.name ?? 'Unknown',
+          time:         slot.time,
+          dose:         slot.dose,
           taken,
           pending: !taken && slotDate > now,
         });
@@ -301,7 +279,7 @@ export default function HomeScreen() {
   };
 
   // ────────────────────────────────────────────────────────────────────────
-  // SHARED — build a stock list from prescriptions for a given patient
+  // SHARED — build stock list for a given patient
   // ────────────────────────────────────────────────────────────────────────
   const buildStockForPatient = async (patId) => {
     const todayStr = getLocalDateString();
@@ -311,10 +289,7 @@ export default function HomeScreen() {
       .select('*, medication(name)')
       .eq('patient_id', patId);
 
-    if (error) {
-      console.error('[buildStockForPatient] error:', error.message);
-      return [];
-    }
+    if (error) { console.error('[buildStockForPatient] error:', error.message); return []; }
 
     const stockList = [];
 
@@ -323,10 +298,10 @@ export default function HomeScreen() {
 
       if (pm.schedule_type === 'consecutive') {
         if (pm.start_date && pm.num_of_days) {
-          const start = new Date(`${pm.start_date}T00:00:00`);
-          const today = new Date(`${todayStr}T00:00:00`);
+          const start   = new Date(`${pm.start_date}T00:00:00`);
+          const today   = new Date(`${todayStr}T00:00:00`);
           const elapsed = Math.round((today - start) / 86_400_000);
-          remaining = Math.max(0, parseInt(pm.num_of_days, 10) - elapsed);
+          remaining     = Math.max(0, parseInt(pm.num_of_days, 10) - elapsed);
         }
       } else if (pm.schedule_type === 'specific') {
         const { count, error: cntError } = await supabase
@@ -340,8 +315,8 @@ export default function HomeScreen() {
       }
 
       stockList.push({
-        id: pm.id,
-        name: pm.medication?.name ?? 'Unknown',
+        id:            pm.id,
+        name:          pm.medication?.name ?? 'Unknown',
         daysRemaining: remaining,
       });
     }
@@ -350,26 +325,12 @@ export default function HomeScreen() {
   };
 
   // ── Caregiver wrappers ──
-  const fetchTodaySchedule = async (patId) => {
-    const schedule = await buildScheduleForPatient(patId);
-    setTodaySchedule(schedule);
-  };
-
-  const fetchMedicationStock = async (patId) => {
-    const stock = await buildStockForPatient(patId);
-    setMedicationStock(stock);
-  };
+  const fetchTodaySchedule  = async (patId) => setTodaySchedule(await buildScheduleForPatient(patId));
+  const fetchMedicationStock = async (patId) => setMedicationStock(await buildStockForPatient(patId));
 
   // ── Patient wrappers ──
-  const fetchPatientSchedule = async (pid) => {
-    const schedule = await buildScheduleForPatient(pid);
-    setPatientSchedule(schedule);
-  };
-
-  const fetchPatientStock = async (pid) => {
-    const stock = await buildStockForPatient(pid);
-    setPatientStock(stock);
-  };
+  const fetchPatientSchedule = async (pid) => setPatientSchedule(await buildScheduleForPatient(pid));
+  const fetchPatientStock    = async (pid) => setPatientStock(await buildStockForPatient(pid));
 
   // ────────────────────────────────────────────────────────────────────────
   // DELETE PATIENT (caregiver only)
@@ -508,14 +469,11 @@ export default function HomeScreen() {
   };
 
   const savePatient = async () => {
-    if (!editName.trim()) {
-      Alert.alert('Missing Info', 'Please enter the patient name.');
-      return;
-    }
+    if (!editName.trim()) { Alert.alert('Missing Info', 'Please enter the patient name.'); return; }
     const payload = {
-      name: editName.trim(),
-      age: editAge ? parseInt(editAge, 10) : null,
-      disease: editDisease.trim(),
+      name:         editName.trim(),
+      age:          editAge ? parseInt(editAge, 10) : null,
+      disease:      editDisease.trim(),
       phone_number: editPhone.trim(),
     };
     const { error } = await supabase.from('patients').update(payload).eq('id', editingPatient.id);
@@ -531,6 +489,24 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await supabase.auth.signOut();
+            router.replace('/(auth)/login');
+          },
+        },
+      ]
+    );
+  };
+
   // ────────────────────────────────────────────────────────────────────────
   // RENDER
   // ────────────────────────────────────────────────────────────────────────
@@ -544,7 +520,7 @@ export default function HomeScreen() {
   }
 
   const visibleCaregiverStock = medicationStock.filter((item) => !dismissedStockIds.includes(item.id));
-  const visiblePatientStock = patientStock.filter((item) => !patientDismissedIds.includes(item.id));
+  const visiblePatientStock   = patientStock.filter((item) => !patientDismissedIds.includes(item.id));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -559,8 +535,10 @@ export default function HomeScreen() {
             <Text style={styles.helloText}>Hello 👋</Text>
             <Text style={styles.userTitle}>{userName}</Text>
           </View>
-          <View style={styles.profileIconCircle}>
-            <Ionicons name="person" size={28} color="#0b4f5c" />
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.logoutIconBtn} onPress={handleLogout}>
+              <Ionicons name="log-out-outline" size={24} color="#0b4f5c" />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -576,18 +554,10 @@ export default function HomeScreen() {
                 {patients.map((p) => (
                   <TouchableOpacity
                     key={p.id}
-                    style={[
-                      styles.patientChip,
-                      selectedPatient?.id === p.id && styles.patientChipSelected,
-                    ]}
+                    style={[styles.patientChip, selectedPatient?.id === p.id && styles.patientChipSelected]}
                     onPress={() => setSelectedPatient(p)}
                   >
-                    <Text
-                      style={[
-                        styles.patientChipText,
-                        selectedPatient?.id === p.id && styles.patientChipTextSelected,
-                      ]}
-                    >
+                    <Text style={[styles.patientChipText, selectedPatient?.id === p.id && styles.patientChipTextSelected]}>
                       {p.name}
                     </Text>
                   </TouchableOpacity>
@@ -603,13 +573,10 @@ export default function HomeScreen() {
                   onPress={() => openEditPatient(selectedPatient)}
                   activeOpacity={0.85}
                 >
-                  <InfoRow label="Name" value={selectedPatient.name} />
-                  <InfoRow
-                    label="Age"
-                    value={selectedPatient.age ? `${selectedPatient.age} years old` : 'N/A'}
-                  />
+                  <InfoRow label="Name"    value={selectedPatient.name} />
+                  <InfoRow label="Age"     value={selectedPatient.age ? `${selectedPatient.age} years old` : 'N/A'} />
                   <InfoRow label="Disease" value={selectedPatient.disease || 'N/A'} />
-                  <InfoRow label="Phone" value={selectedPatient.phone_number || 'N/A'} />
+                  <InfoRow label="Phone"   value={selectedPatient.phone_number || 'N/A'} />
                   <View style={styles.patientCardBottom}>
                     <Text style={styles.tapToEditText}>Tap to edit</Text>
                     <TouchableOpacity
@@ -627,11 +594,7 @@ export default function HomeScreen() {
             {selectedPatient && (
               <View style={styles.sectionContainer}>
                 <Text style={styles.sectionTitle}>Schedule</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.titleSpacing}
-                >
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.titleSpacing}>
                   {todaySchedule.length === 0 ? (
                     <View style={styles.emptyCard}>
                       <Text style={styles.emptyCardText}>No meds today</Text>
@@ -642,29 +605,17 @@ export default function HomeScreen() {
                       return (
                         <View key={item.scheduleId ?? i} style={styles.scheduleCard}>
                           <View style={styles.cardIcons}>
-                            <TouchableOpacity
-                              onPress={() => openEditMedModal(item)}
-                              style={styles.cardIconBtn}
-                            >
+                            <TouchableOpacity onPress={() => openEditMedModal(item)} style={styles.cardIconBtn}>
                               <Ionicons name="pencil" size={13} color="#0b4f5c" />
                             </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => deleteMedication(item)}
-                              style={styles.cardIconBtn}
-                            >
+                            <TouchableOpacity onPress={() => deleteMedication(item)} style={styles.cardIconBtn}>
                               <Ionicons name="trash-outline" size={13} color="#e74c3c" />
                             </TouchableOpacity>
                           </View>
                           <Ionicons name={icon.name} size={32} color={icon.color} />
-                          <Text style={styles.cardMedName} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                          <Text style={styles.cardTime}>
-                            {item.time ? item.time.substring(0, 5) : '--:--'}
-                          </Text>
-                          <Text style={styles.cardDose}>
-                            {item.dose} pill{item.dose !== 1 ? 's' : ''}
-                          </Text>
+                          <Text style={styles.cardMedName} numberOfLines={1}>{item.name}</Text>
+                          <Text style={styles.cardTime}>{item.time ? item.time.substring(0, 5) : '--:--'}</Text>
+                          <Text style={styles.cardDose}>{item.dose} pill{item.dose !== 1 ? 's' : ''}</Text>
                         </View>
                       );
                     })
@@ -683,28 +634,16 @@ export default function HomeScreen() {
                       <Text style={styles.noMedsText}>No medications tracked</Text>
                     </View>
                   ) : (
-                    <ScrollView
-                      nestedScrollEnabled
-                      showsVerticalScrollIndicator={false}
-                      style={styles.stockScroll}
-                    >
+                    <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={styles.stockScroll}>
                       {visibleCaregiverStock.map((item) => (
                         <View key={item.id} style={styles.stockRow}>
                           <Text style={styles.stockNameLabel}>{item.name} :</Text>
                           <View style={styles.stockRight}>
-                            <Text
-                              style={[
-                                styles.stockDaysValue,
-                                { color: item.daysRemaining === 0 ? '#e74c3c' : '#0b4f5c' },
-                              ]}
-                            >
+                            <Text style={[styles.stockDaysValue, { color: item.daysRemaining === 0 ? '#e74c3c' : '#0b4f5c' }]}>
                               {item.daysRemaining} days remaining
                             </Text>
                             {item.daysRemaining === 0 && (
-                              <TouchableOpacity
-                                onPress={() => dismissStockItem(item.id)}
-                                style={styles.dismissBtn}
-                              >
+                              <TouchableOpacity onPress={() => dismissStockItem(item.id)} style={styles.dismissBtn}>
                                 <Ionicons name="close-circle" size={18} color="#e74c3c" />
                               </TouchableOpacity>
                             )}
@@ -722,18 +661,13 @@ export default function HomeScreen() {
         )}
 
         {/* ══════════════════════════════════════════════════
-            PATIENT VIEW — read-only, no edit/delete icons
+            PATIENT VIEW — read-only
         ══════════════════════════════════════════════════ */}
         {role === 'patient' && (
           <>
-            {/* Today's Schedule */}
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>Today's Schedule</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.titleSpacing}
-              >
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.titleSpacing}>
                 {patientSchedule.length === 0 ? (
                   <View style={styles.emptyCard}>
                     <Text style={styles.emptyCardText}>No meds today</Text>
@@ -744,15 +678,9 @@ export default function HomeScreen() {
                     return (
                       <View key={i} style={styles.patientScheduleCard}>
                         <Ionicons name={icon.name} size={32} color={icon.color} />
-                        <Text style={styles.cardMedName} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <Text style={styles.cardTime}>
-                          {item.time ? item.time.substring(0, 5) : '--:--'}
-                        </Text>
-                        <Text style={styles.cardDose}>
-                          {item.dose} pill{item.dose !== 1 ? 's' : ''}
-                        </Text>
+                        <Text style={styles.cardMedName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.cardTime}>{item.time ? item.time.substring(0, 5) : '--:--'}</Text>
+                        <Text style={styles.cardDose}>{item.dose} pill{item.dose !== 1 ? 's' : ''}</Text>
                       </View>
                     );
                   })
@@ -760,7 +688,6 @@ export default function HomeScreen() {
               </ScrollView>
             </View>
 
-            {/* Treatment Tracker */}
             <View style={styles.sectionContainer}>
               <Text style={styles.sectionTitle}>Treatment Tracker</Text>
               <View style={[styles.stockMainCard, styles.titleSpacing]}>
@@ -769,28 +696,16 @@ export default function HomeScreen() {
                     <Text style={styles.noMedsText}>No medications tracked</Text>
                   </View>
                 ) : (
-                  <ScrollView
-                    nestedScrollEnabled
-                    showsVerticalScrollIndicator={false}
-                    style={styles.stockScroll}
-                  >
+                  <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false} style={styles.stockScroll}>
                     {visiblePatientStock.map((item) => (
                       <View key={item.id} style={styles.stockRow}>
                         <Text style={styles.stockNameLabel}>{item.name} :</Text>
                         <View style={styles.stockRight}>
-                          <Text
-                            style={[
-                              styles.stockDaysValue,
-                              { color: item.daysRemaining === 0 ? '#e74c3c' : '#0b4f5c' },
-                            ]}
-                          >
+                          <Text style={[styles.stockDaysValue, { color: item.daysRemaining === 0 ? '#e74c3c' : '#0b4f5c' }]}>
                             {item.daysRemaining} days remaining
                           </Text>
                           {item.daysRemaining === 0 && (
-                            <TouchableOpacity
-                              onPress={() => dismissPatientStockItem(item.id)}
-                              style={styles.dismissBtn}
-                            >
+                            <TouchableOpacity onPress={() => dismissPatientStockItem(item.id)} style={styles.dismissBtn}>
                               <Ionicons name="close-circle" size={18} color="#e74c3c" />
                             </TouchableOpacity>
                           )}
@@ -812,41 +727,12 @@ export default function HomeScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <Text style={styles.modalTitle}>Edit Patient</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Name"
-              placeholderTextColor="#9e9e9e"
-              value={editName}
-              onChangeText={setEditName}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Age"
-              placeholderTextColor="#9e9e9e"
-              value={editAge}
-              onChangeText={setEditAge}
-              keyboardType="numeric"
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Disease"
-              placeholderTextColor="#9e9e9e"
-              value={editDisease}
-              onChangeText={setEditDisease}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Phone"
-              placeholderTextColor="#9e9e9e"
-              value={editPhone}
-              onChangeText={setEditPhone}
-              keyboardType="phone-pad"
-            />
+            <TextInput style={styles.modalInput} placeholder="Name"    placeholderTextColor="#9e9e9e" value={editName}    onChangeText={setEditName} />
+            <TextInput style={styles.modalInput} placeholder="Age"     placeholderTextColor="#9e9e9e" value={editAge}     onChangeText={setEditAge}  keyboardType="numeric" />
+            <TextInput style={styles.modalInput} placeholder="Disease" placeholderTextColor="#9e9e9e" value={editDisease} onChangeText={setEditDisease} />
+            <TextInput style={styles.modalInput} placeholder="Phone"   placeholderTextColor="#9e9e9e" value={editPhone}   onChangeText={setEditPhone} keyboardType="phone-pad" />
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancel}
-                onPress={() => setShowPatientModal(false)}
-              >
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowPatientModal(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalSave} onPress={savePatient}>
@@ -864,23 +750,10 @@ export default function HomeScreen() {
             <Text style={styles.modalTitle}>Edit Medication</Text>
 
             <Text style={styles.fieldLabel}>Medication Name</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editMedName}
-              onChangeText={setEditMedName}
-              placeholder="e.g. Paracetamol"
-              placeholderTextColor="#bbb"
-            />
+            <TextInput style={styles.modalInput} value={editMedName} onChangeText={setEditMedName} placeholder="e.g. Paracetamol" placeholderTextColor="#bbb" />
 
             <Text style={styles.fieldLabel}>Pills per take</Text>
-            <TextInput
-              style={styles.modalInput}
-              keyboardType="decimal-pad"
-              value={editMedDose}
-              onChangeText={setEditMedDose}
-              placeholder="e.g. 1"
-              placeholderTextColor="#bbb"
-            />
+            <TextInput style={styles.modalInput} keyboardType="decimal-pad" value={editMedDose} onChangeText={setEditMedDose} placeholder="e.g. 1" placeholderTextColor="#bbb" />
 
             <Text style={styles.fieldLabel}>Time</Text>
             <TouchableOpacity
@@ -903,10 +776,7 @@ export default function HomeScreen() {
                   style={Platform.OS === 'ios' ? { width: '100%' } : {}}
                 />
                 {Platform.OS === 'ios' && (
-                  <TouchableOpacity
-                    style={styles.confirmPickerBtn}
-                    onPress={() => setShowInlineTimePicker(false)}
-                  >
+                  <TouchableOpacity style={styles.confirmPickerBtn} onPress={() => setShowInlineTimePicker(false)}>
                     <Text style={styles.confirmPickerText}>Confirm Time ✓</Text>
                   </TouchableOpacity>
                 )}
@@ -914,10 +784,7 @@ export default function HomeScreen() {
             )}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancel}
-                onPress={() => setShowMedModal(false)}
-              >
+              <TouchableOpacity style={styles.modalCancel} onPress={() => setShowMedModal(false)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalSave} onPress={saveMedication}>
@@ -941,15 +808,9 @@ const InfoRow = ({ label, value }) => (
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0b4f5c' },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: '#0b4f5c',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container:        { flex: 1, backgroundColor: '#0b4f5c' },
+  loadingContainer: { flex: 1, backgroundColor: '#0b4f5c', justifyContent: 'center', alignItems: 'center' },
 
-  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -958,51 +819,27 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
-  helloText: { color: 'rgba(255,255,255,0.7)', fontSize: 18 },
-  userTitle: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-  profileIconCircle: {
-    backgroundColor: '#fff',
-    borderRadius: 50,
-    padding: 8,
-    elevation: 3,
-  },
+  headerRight:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  helloText:     { color: 'rgba(255,255,255,0.7)', fontSize: 18 },
+  userTitle:     { color: '#fff', fontSize: 24, fontWeight: 'bold' },
+  logoutIconBtn: { backgroundColor: '#fff', borderRadius: 50, padding: 8, elevation: 3 },
 
-  // Section
   sectionContainer: { paddingHorizontal: 20, marginBottom: 20 },
-  sectionTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
-  titleSpacing: { marginTop: 4 },
+  sectionTitle:     { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 10 },
+  titleSpacing:     { marginTop: 4 },
 
-  // Patient chips (caregiver only)
-  patientChip: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginRight: 10,
-  },
-  patientChipSelected: { backgroundColor: '#7DD1E0' },
-  patientChipText: { color: '#fff', fontWeight: '600' },
+  patientChip:             { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, marginRight: 10 },
+  patientChipSelected:     { backgroundColor: '#7DD1E0' },
+  patientChipText:         { color: '#fff', fontWeight: '600' },
   patientChipTextSelected: { color: '#0b4f5c' },
 
-  // Patient info card (caregiver only)
-  patientCard: {
-    backgroundColor: '#f0f4f5',
-    borderRadius: 25,
-    padding: 16,
-    elevation: 2,
-  },
-  infoRow: { flexDirection: 'row', marginBottom: 8 },
-  infoLabel: { color: '#0b4f5c', fontWeight: 'bold', width: 80, fontSize: 14 },
-  infoValue: { color: '#333', fontSize: 14, flex: 1 },
-  patientCardBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  tapToEditText: { color: '#a0b5ba', fontSize: 13, fontStyle: 'italic' },
+  patientCard:       { backgroundColor: '#f0f4f5', borderRadius: 25, padding: 16, elevation: 2 },
+  infoRow:           { flexDirection: 'row', marginBottom: 8 },
+  infoLabel:         { color: '#0b4f5c', fontWeight: 'bold', width: 80, fontSize: 14 },
+  infoValue:         { color: '#333', fontSize: 14, flex: 1 },
+  patientCardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  tapToEditText:     { color: '#a0b5ba', fontSize: 13, fontStyle: 'italic' },
 
-  // Schedule card — CAREGIVER
   scheduleCard: {
     backgroundColor: '#fff',
     borderRadius: 25,
@@ -1012,19 +849,9 @@ const styles = StyleSheet.create({
     minWidth: 110,
     elevation: 2,
   },
-  cardIcons: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 8,
-    alignSelf: 'flex-end',
-  },
-  cardIconBtn: {
-    backgroundColor: '#f0f4f5',
-    borderRadius: 6,
-    padding: 5,
-  },
+  cardIcons:   { flexDirection: 'row', gap: 6, marginBottom: 8, alignSelf: 'flex-end' },
+  cardIconBtn: { backgroundColor: '#f0f4f5', borderRadius: 6, padding: 5 },
 
-  // Schedule card — PATIENT
   patientScheduleCard: {
     backgroundColor: '#fff',
     borderRadius: 25,
@@ -1036,116 +863,38 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  cardMedName: {
-    color: '#0b4f5c',
-    fontWeight: 'bold',
-    fontSize: 13,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  cardTime: { color: '#555', fontSize: 12, marginTop: 2 },
-  cardDose: { color: '#888', fontSize: 11, marginTop: 2 },
+  cardMedName: { color: '#0b4f5c', fontWeight: 'bold', fontSize: 13, marginTop: 6, textAlign: 'center' },
+  cardTime:    { color: '#555', fontSize: 12, marginTop: 2 },
+  cardDose:    { color: '#888', fontSize: 11, marginTop: 2 },
 
-  // Empty card
-  emptyCard: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 16,
-    padding: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 160,
-  },
+  emptyCard:     { backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 16, padding: 20, justifyContent: 'center', alignItems: 'center', minWidth: 160 },
   emptyCardText: { color: 'rgba(255,255,255,0.5)', fontSize: 14 },
 
-  // Treatment Tracker
-  stockMainCard: {
-    backgroundColor: '#f0f4f5',
-    borderRadius: 32,
-    padding: 18,
-    elevation: 3,
-    minHeight: 80,
-    maxHeight: 230,
-  },
-  stockScroll: { flexGrow: 0 },
-  noMedsContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  noMedsText: { color: '#7b8b90', fontSize: 15, fontWeight: '600' },
-  stockRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
-  },
-  stockNameLabel: {
-    color: '#0b4f5c',
-    fontWeight: '600',
-    fontSize: 15,
-    flex: 1,
-  },
-  stockRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stockDaysValue: { fontSize: 14, fontWeight: '500' },
-  dismissBtn: { padding: 2 },
+  stockMainCard:    { backgroundColor: '#f0f4f5', borderRadius: 32, padding: 18, elevation: 3, minHeight: 80, maxHeight: 230 },
+  stockScroll:      { flexGrow: 0 },
+  noMedsContainer:  { justifyContent: 'center', alignItems: 'center', paddingVertical: 6 },
+  noMedsText:       { color: '#7b8b90', fontSize: 15, fontWeight: '600' },
+  stockRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.06)' },
+  stockNameLabel:   { color: '#0b4f5c', fontWeight: '600', fontSize: 15, flex: 1 },
+  stockRight:       { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stockDaysValue:   { fontSize: 14, fontWeight: '500' },
+  dismissBtn:       { padding: 2 },
 
-  // Modals
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalBox: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#0b4f5c', marginBottom: 16 },
-  modalInput: {
-    backgroundColor: '#f0f4f5',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    fontSize: 15,
-  },
-  modalButtons: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  modalCancel: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#0b4f5c',
-    alignItems: 'center',
-  },
+  modalOverlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalBox:        { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%' },
+  modalTitle:      { fontSize: 20, fontWeight: 'bold', color: '#0b4f5c', marginBottom: 16 },
+  modalInput:      { backgroundColor: '#f0f4f5', borderRadius: 12, padding: 14, marginBottom: 12, fontSize: 15 },
+  modalButtons:    { flexDirection: 'row', gap: 10, marginTop: 4 },
+  modalCancel:     { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#0b4f5c', alignItems: 'center' },
   modalCancelText: { color: '#0b4f5c', fontWeight: '600' },
-  modalSave: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#0b4f5c',
-    alignItems: 'center',
-  },
-  modalSaveText: { color: '#fff', fontWeight: '600' },
+  modalSave:       { flex: 1, padding: 14, borderRadius: 12, backgroundColor: '#0b4f5c', alignItems: 'center' },
+  modalSaveText:   { color: '#fff', fontWeight: '600' },
 
-  // Medication modal extras
-  fieldLabel: { color: '#0b4f5c', fontWeight: '600', fontSize: 13, marginBottom: 4 },
-  pickerField: {
-    backgroundColor: '#f0f4f5',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  pickerFieldActive: { borderWidth: 1.5, borderColor: '#0b4f5c' },
-  pickerText: { color: '#0b4f5c', fontSize: 15, fontWeight: '500' },
-  inlinePickerContainer: {
-    backgroundColor: '#f0f4f5',
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  confirmPickerBtn: { backgroundColor: '#0b4f5c', padding: 10, alignItems: 'center' },
-  confirmPickerText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  fieldLabel:             { color: '#0b4f5c', fontWeight: '600', fontSize: 13, marginBottom: 4 },
+  pickerField:            { backgroundColor: '#f0f4f5', borderRadius: 12, padding: 14, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pickerFieldActive:      { borderWidth: 1.5, borderColor: '#0b4f5c' },
+  pickerText:             { color: '#0b4f5c', fontSize: 15, fontWeight: '500' },
+  inlinePickerContainer:  { backgroundColor: '#f0f4f5', borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
+  confirmPickerBtn:       { backgroundColor: '#0b4f5c', padding: 10, alignItems: 'center' },
+  confirmPickerText:      { color: '#fff', fontWeight: '600', fontSize: 14 },
 });
