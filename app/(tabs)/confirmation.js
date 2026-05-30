@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+
 
 // ── Local date helpers ────────────────────────────────────────────────────────
 const getLocalDateString = () => {
@@ -169,7 +171,8 @@ export default function ConfirmationScreen() {
         const takeMin  = h * 60 + m;
         const inWindow = Math.abs(nowMin - takeMin) <= 60;
         const notTaken = !takenIds.includes(take.id);
-        return inWindow && notTaken;
+        const isPast   = takeMin < nowMin;
+        return (inWindow || isPast) && notTaken;
       });
 
       setCurrentMeds(medsFound);
@@ -208,6 +211,28 @@ export default function ConfirmationScreen() {
       const localISO = getLocalISOString();
 
       for (const med of medsToProcess) {
+        const allScheduled = await Notifications
+        .getAllScheduledNotificationsAsync();
+
+      // LIGNE 2 : Pour chaque notification programmée
+      for (const scheduled of allScheduled) {
+
+        // LIGNE 3 : Récupère les données de cette notif
+        const notifData = scheduled.content.data;
+
+        // LIGNE 4 : Vérifie si c'est pour CE médicament
+        if (notifData?.intake_time_id === med.id) {
+
+          // LIGNE 5 : Annule cette notification
+          await Notifications
+            .cancelScheduledNotificationAsync(
+              scheduled.identifier
+            );
+
+          console.log("✅ Notification annulée:", 
+            scheduled.identifier);
+        }
+      }
         // Insert history entry
         const { error: histErr } = await supabase.from('history').insert({
           patient_id:      patientId,
